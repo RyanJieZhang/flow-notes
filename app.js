@@ -1,4 +1,5 @@
 const STORAGE_KEY = "flow-notes-history";
+const DRAFT_KEY = "flow-notes-draft";
 
 const titleInput = document.querySelector("#titleInput");
 const noteInput = document.querySelector("#noteInput");
@@ -17,7 +18,7 @@ let notes = loadNotes();
 let activeNoteId = notes[0]?.id ?? null;
 
 render();
-syncEditorFromActiveNote();
+syncEditorFromDraftOrActiveNote();
 
 saveButton.addEventListener("click", saveCurrentNote);
 newNoteButton.addEventListener("click", startFreshNote);
@@ -27,8 +28,12 @@ searchInput.addEventListener("input", renderHistory);
 noteInput.addEventListener("input", () => {
   updateWordCount();
   markDraft();
+  saveDraft();
 });
-titleInput.addEventListener("input", markDraft);
+titleInput.addEventListener("input", () => {
+  markDraft();
+  saveDraft();
+});
 
 function loadNotes() {
   try {
@@ -41,6 +46,29 @@ function loadNotes() {
 
 function persistNotes() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(notes));
+}
+
+function loadDraft() {
+  try {
+    const draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || "null");
+    return draft && typeof draft === "object" ? draft : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDraft() {
+  const draft = {
+    title: titleInput.value,
+    body: noteInput.value,
+    updatedAt: new Date().toISOString(),
+  };
+
+  localStorage.setItem(DRAFT_KEY, JSON.stringify(draft));
+}
+
+function clearDraft() {
+  localStorage.removeItem(DRAFT_KEY);
 }
 
 function saveCurrentNote() {
@@ -63,6 +91,7 @@ function saveCurrentNote() {
   notes = [note, ...notes];
   activeNoteId = note.id;
   persistNotes();
+  clearDraft();
   render();
   saveStatus.textContent = `已保存：${formatDate(now)}`;
 }
@@ -72,6 +101,7 @@ function startFreshNote() {
   titleInput.value = "";
   noteInput.value = "";
   saveStatus.textContent = "新笔记";
+  clearDraft();
   updateWordCount();
   renderHistory();
   titleInput.focus();
@@ -80,13 +110,47 @@ function startFreshNote() {
 function restoreNote(id) {
   activeNoteId = id;
   syncEditorFromActiveNote();
+  clearDraft();
   renderHistory();
+}
+
+function deleteNote(id) {
+  const note = notes.find((item) => item.id === id);
+  if (!note) return;
+
+  const confirmed = window.confirm(`确定删除「${note.title}」这条历史吗？`);
+  if (!confirmed) return;
+
+  notes = notes.filter((item) => item.id !== id);
+  if (activeNoteId === id) {
+    activeNoteId = notes[0]?.id ?? null;
+    syncEditorFromActiveNote();
+  }
+
+  persistNotes();
+  render();
+  saveStatus.textContent = "历史记录已删除";
+}
+
+function syncEditorFromDraftOrActiveNote() {
+  const draft = loadDraft();
+  if (draft && (draft.title || draft.body)) {
+    titleInput.value = draft.title || "";
+    noteInput.value = draft.body || "";
+    saveStatus.textContent = `草稿已恢复：${formatDate(new Date(draft.updatedAt))}`;
+    updateWordCount();
+    return;
+  }
+
+  syncEditorFromActiveNote();
 }
 
 function syncEditorFromActiveNote() {
   const activeNote = notes.find((note) => note.id === activeNoteId);
 
   if (!activeNote) {
+    titleInput.value = "";
+    noteInput.value = "";
     updateWordCount();
     return;
   }
@@ -148,12 +212,15 @@ function renderHistory() {
   visibleNotes.forEach((note) => {
     const item = template.content.cloneNode(true);
     const button = item.querySelector(".history-item");
+    const restoreButton = item.querySelector(".history-restore");
+    const deleteButton = item.querySelector(".delete-note");
     const title = item.querySelector("strong");
     const preview = item.querySelector(".preview");
     const time = item.querySelector("small");
 
     button.classList.toggle("active", note.id === activeNoteId);
-    button.addEventListener("click", () => restoreNote(note.id));
+    restoreButton.addEventListener("click", () => restoreNote(note.id));
+    deleteButton.addEventListener("click", () => deleteNote(note.id));
     title.textContent = note.title;
     preview.textContent = note.body || "空白笔记";
     time.textContent = formatDate(new Date(note.createdAt));

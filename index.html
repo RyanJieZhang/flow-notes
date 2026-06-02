@@ -52,11 +52,14 @@
 
   <template id="historyItemTemplate">
     <li>
-      <button class="history-item" type="button">
-        <strong></strong>
-        <span class="preview"></span>
-        <small></small>
-      </button>
+      <div class="history-item">
+        <button class="history-restore" type="button">
+          <strong></strong>
+          <span class="preview"></span>
+          <small></small>
+        </button>
+        <button class="delete-note" type="button" title="删除这条历史" aria-label="删除这条历史">×</button>
+      </div>
     </li>
   </template>
 

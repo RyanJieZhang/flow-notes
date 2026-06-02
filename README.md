@@ -7,3 +7,9 @@
 直接在浏览器中打开 `index.html` 即可使用。
 
 历史记录保存在浏览器的 `localStorage` 中，同一台设备、同一个浏览器里会自动保留。
+
+## 在线访问
+
+启用 GitHub Pages 后，可以访问：
+
+https://RyanJieZhang.github.io/flow-notes/
