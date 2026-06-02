@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flow Notes</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <main class="app-shell">
+    <aside class="history-panel" aria-label="笔记历史">
+      <div class="panel-header">
+        <div>
+          <p class="eyebrow">Flow Notes</p>
+          <h1>笔记</h1>
+        </div>
+        <button class="icon-button" id="newNoteButton" type="button" title="新建笔记" aria-label="新建笔记">
+          +
+        </button>
+      </div>
+
+      <label class="search-box">
+        <span>搜索</span>
+        <input id="searchInput" type="search" placeholder="标题或正文">
+      </label>
+
+      <div class="history-meta">
+        <span id="noteCount">0 条记录</span>
+        <button id="clearButton" type="button">清空</button>
+      </div>
+
+      <ol class="history-list" id="historyList"></ol>
+    </aside>
+
+    <section class="editor-panel" aria-label="编辑笔记">
+      <div class="editor-toolbar">
+        <input id="titleInput" class="title-input" type="text" placeholder="给这条笔记起个标题">
+        <div class="toolbar-actions">
+          <button id="exportButton" class="ghost-button" type="button">导出</button>
+          <button id="saveButton" class="primary-button" type="button">保存</button>
+        </div>
+      </div>
+
+      <textarea id="noteInput" class="note-input" placeholder="把想法写在这里。每次保存都会生成一条历史记录，之后可以随时点开恢复。"></textarea>
+
+      <footer class="status-bar">
+        <span id="saveStatus">尚未保存</span>
+        <span id="wordCount">0 字</span>
+      </footer>
+    </section>
+  </main>
+
+  <template id="historyItemTemplate">
+    <li>
+      <button class="history-item" type="button">
+        <strong></strong>
+        <span class="preview"></span>
+        <small></small>
+      </button>
+    </li>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
