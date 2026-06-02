@@ -202,6 +202,12 @@ function exportCurrentNote() {
   const body = noteInput.value;
   const format = exportFormatSelect.value;
   const note = buildExportNote(title, body);
+
+  if (format === "pdf") {
+    exportPdf(note);
+    return;
+  }
+
   const exportFile = buildExportFile(note, format);
 
   if (!exportFile) {
@@ -352,7 +358,20 @@ function buildExportFile(note, format) {
   };
 }
 
-function buildHtmlDocument(note) {
+function exportPdf(note) {
+  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+
+  if (!printWindow) {
+    saveStatus.textContent = "请允许弹出窗口后再导出 PDF";
+    return;
+  }
+
+  printWindow.document.write(buildHtmlDocument(note, true));
+  printWindow.document.close();
+  saveStatus.textContent = "PDF 打印窗口已打开";
+}
+
+function buildHtmlDocument(note, autoPrint = false) {
   return `<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -360,14 +379,17 @@ function buildHtmlDocument(note) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>${escapeHtml(note.title)}</title>
   <style>
+    @page { margin: 22mm 18mm; }
     body { max-width: 760px; margin: 48px auto; padding: 0 22px; font-family: "Segoe UI", Arial, sans-serif; color: #20231f; line-height: 1.75; }
     h1 { line-height: 1.2; }
     code { padding: 2px 6px; border-radius: 6px; background: #eef4ef; }
     a { color: #16645a; }
+    @media print { body { max-width: none; margin: 0; padding: 0; } }
   </style>
 </head>
 <body>
 ${renderMarkdown(`# ${note.title}\n\n${note.body}`)}
+${autoPrint ? "<script>window.addEventListener('load', () => setTimeout(() => window.print(), 150));<\/script>" : ""}
 </body>
 </html>`;
 }
