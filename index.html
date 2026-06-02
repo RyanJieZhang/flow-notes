@@ -22,13 +22,35 @@
 
       <label class="search-box">
         <span>搜索</span>
-        <input id="searchInput" type="search" placeholder="标题或正文">
+        <input id="searchInput" type="search" placeholder="标题、正文或标签">
       </label>
+
+      <div class="filter-row" aria-label="笔记过滤">
+        <label>
+          <span>状态</span>
+          <select id="statusFilter">
+            <option value="active">未归档</option>
+            <option value="all">全部</option>
+            <option value="pinned">置顶</option>
+            <option value="archived">归档</option>
+          </select>
+        </label>
+        <label>
+          <span>标签</span>
+          <select id="tagFilter">
+            <option value="all">全部标签</option>
+          </select>
+        </label>
+      </div>
 
       <div class="history-meta">
         <span id="noteCount">0 条记录</span>
-        <button id="clearButton" type="button">清空</button>
+        <div class="history-actions">
+          <button id="importButton" type="button">导入</button>
+          <button id="clearButton" type="button">清空</button>
+        </div>
       </div>
+      <input id="importInput" type="file" accept="application/json,.json" hidden>
 
       <ol class="history-list" id="historyList"></ol>
     </aside>
@@ -58,6 +80,17 @@
         </div>
       </div>
 
+      <div class="note-meta-panel">
+        <label class="tag-editor">
+          <span>标签</span>
+          <input id="tagInput" type="text" placeholder="学习, 工作, 灵感">
+        </label>
+        <div class="note-actions">
+          <button id="pinButton" class="ghost-button" type="button">置顶</button>
+          <button id="archiveButton" class="ghost-button" type="button">归档</button>
+        </div>
+      </div>
+
       <div class="workspace" id="workspace" data-view="edit">
         <textarea id="noteInput" class="note-input" placeholder="把想法写在这里。支持 Markdown，保存后可以继续编辑，也可以切到预览查看排版。"></textarea>
         <article class="preview-panel" id="previewPanel" aria-label="Markdown 预览"></article>
@@ -76,6 +109,7 @@
         <button class="history-restore" type="button">
           <strong></strong>
           <span class="preview"></span>
+          <span class="tagline"></span>
           <small></small>
         </button>
         <button class="delete-note" type="button" title="删除这条历史" aria-label="删除这条历史">×</button>

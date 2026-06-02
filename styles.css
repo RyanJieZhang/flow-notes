@@ -71,7 +71,11 @@ button {
 .status-bar,
 .toolbar-actions,
 .panel-actions,
-.view-tabs {
+.view-tabs,
+.filter-row,
+.history-actions,
+.note-meta-panel,
+.note-actions {
   display: flex;
   align-items: center;
 }
@@ -121,7 +125,9 @@ h1 {
   font-size: 20px;
 }
 
-.search-box {
+.search-box,
+.filter-row label,
+.tag-editor {
   display: grid;
   gap: 8px;
   color: var(--muted);
@@ -130,6 +136,8 @@ h1 {
 }
 
 .search-box input,
+.filter-row select,
+.tag-editor input,
 .title-input {
   width: 100%;
   border: 1px solid var(--line);
@@ -143,7 +151,22 @@ h1 {
   padding: 12px 14px;
 }
 
+.filter-row {
+  gap: 10px;
+}
+
+.filter-row label {
+  flex: 1;
+}
+
+.filter-row select,
+.tag-editor input {
+  padding: 11px 12px;
+}
+
 .search-box input:focus,
+.filter-row select:focus,
+.tag-editor input:focus,
 .title-input:focus,
 .note-input:focus {
   border-color: var(--accent);
@@ -154,6 +177,10 @@ h1 {
   min-height: 34px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.history-actions {
+  gap: 8px;
 }
 
 .history-meta button,
@@ -244,6 +271,14 @@ h1 {
   background: var(--accent-soft);
 }
 
+.history-item.archived {
+  opacity: 0.72;
+}
+
+.history-item.pinned {
+  border-color: var(--accent);
+}
+
 .history-restore {
   display: grid;
   gap: 7px;
@@ -290,6 +325,15 @@ h1 {
   -webkit-line-clamp: 2;
 }
 
+.history-item .tagline {
+  overflow: hidden;
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .history-item small {
   color: var(--accent-strong);
   font-size: 12px;
@@ -317,6 +361,30 @@ h1 {
 .toolbar-actions {
   flex-shrink: 0;
   gap: 10px;
+}
+
+.note-meta-panel {
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.tag-editor {
+  flex: 1;
+}
+
+.note-actions {
+  flex-shrink: 0;
+  gap: 10px;
+}
+
+.ghost-button.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
 }
 
 .workspace {
@@ -458,6 +526,15 @@ h1 {
   .toolbar-actions {
     flex-wrap: wrap;
     width: 100%;
+  }
+
+  .note-meta-panel {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .note-actions button {
+    flex: 1;
   }
 
   .toolbar-actions > button {
