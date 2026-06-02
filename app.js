@@ -221,8 +221,11 @@ function exportCurrentNote() {
 
   anchor.href = url;
   anchor.download = exportFile.filename;
+  anchor.style.display = "none";
+  document.body.append(anchor);
   anchor.click();
-  URL.revokeObjectURL(url);
+  anchor.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 500);
   saveStatus.textContent = `已导出：${exportFile.label}`;
 }
 
@@ -359,7 +362,7 @@ function buildExportFile(note, format) {
 }
 
 function exportPdf(note) {
-  const printWindow = window.open("", "_blank", "noopener,noreferrer");
+  const printWindow = window.open("", "_blank");
 
   if (!printWindow) {
     saveStatus.textContent = "请允许弹出窗口后再导出 PDF";
@@ -381,13 +384,16 @@ function buildHtmlDocument(note, autoPrint = false) {
   <style>
     @page { margin: 22mm 18mm; }
     body { max-width: 760px; margin: 48px auto; padding: 0 22px; font-family: "Segoe UI", Arial, sans-serif; color: #20231f; line-height: 1.75; }
+    .print-action { position: sticky; top: 0; margin: -18px 0 28px; padding: 12px 0; background: #fff; border-bottom: 1px solid #dce2d8; }
+    .print-action button { border: 0; border-radius: 8px; background: #16645a; color: #fff; cursor: pointer; font: inherit; font-weight: 700; padding: 10px 16px; }
     h1 { line-height: 1.2; }
     code { padding: 2px 6px; border-radius: 6px; background: #eef4ef; }
     a { color: #16645a; }
-    @media print { body { max-width: none; margin: 0; padding: 0; } }
+    @media print { body { max-width: none; margin: 0; padding: 0; } .print-action { display: none; } }
   </style>
 </head>
 <body>
+${autoPrint ? '<div class="print-action"><button type="button" onclick="window.print()">保存为 PDF</button></div>' : ""}
 ${renderMarkdown(`# ${note.title}\n\n${note.body}`)}
 ${autoPrint ? "<script>window.addEventListener('load', () => setTimeout(() => window.print(), 150));<\/script>" : ""}
 </body>
