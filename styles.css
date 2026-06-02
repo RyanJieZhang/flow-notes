@@ -158,7 +158,8 @@ h1 {
 
 .history-meta button,
 .ghost-button,
-.tab-button {
+.tab-button,
+.export-select select {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -168,9 +169,29 @@ h1 {
 
 .history-meta button:hover,
 .ghost-button:hover,
-.tab-button:hover {
+.tab-button:hover,
+.export-select select:hover {
   color: var(--ink);
   border-color: #bac5b6;
+}
+
+.export-select {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.export-select select {
+  min-width: 118px;
+  height: 38px;
+  outline: none;
+}
+
+.export-select select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(22, 100, 90, 0.14);
 }
 
 .view-tabs {
@@ -441,6 +462,14 @@ h1 {
 
   .toolbar-actions > button {
     flex: 1;
+  }
+
+  .export-select {
+    flex: 1 1 150px;
+  }
+
+  .export-select select {
+    width: 100%;
   }
 
   .view-tabs {

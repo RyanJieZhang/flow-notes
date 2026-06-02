@@ -42,6 +42,16 @@
             <button class="tab-button" id="splitViewButton" type="button" data-view="split">分屏</button>
             <button class="tab-button" id="previewViewButton" type="button" data-view="preview">预览</button>
           </div>
+          <label class="export-select">
+            <span>导出格式</span>
+            <select id="exportFormatSelect">
+              <option value="markdown">Markdown</option>
+              <option value="text">TXT</option>
+              <option value="html">HTML</option>
+              <option value="json">JSON</option>
+              <option value="all-json">全部 JSON</option>
+            </select>
+          </label>
           <button id="exportButton" class="ghost-button" type="button">导出</button>
           <button id="saveButton" class="primary-button" type="button">保存</button>
         </div>

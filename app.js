@@ -8,6 +8,7 @@ const noteInput = document.querySelector("#noteInput");
 const saveButton = document.querySelector("#saveButton");
 const newNoteButton = document.querySelector("#newNoteButton");
 const exportButton = document.querySelector("#exportButton");
+const exportFormatSelect = document.querySelector("#exportFormatSelect");
 const clearButton = document.querySelector("#clearButton");
 const themeButton = document.querySelector("#themeButton");
 const searchInput = document.querySelector("#searchInput");
@@ -199,14 +200,24 @@ function syncEditorFromActiveNote() {
 function exportCurrentNote() {
   const title = titleInput.value.trim() || "未命名笔记";
   const body = noteInput.value;
-  const blob = new Blob([`# ${title}\n\n${body}\n`], { type: "text/markdown;charset=utf-8" });
+  const format = exportFormatSelect.value;
+  const note = buildExportNote(title, body);
+  const exportFile = buildExportFile(note, format);
+
+  if (!exportFile) {
+    saveStatus.textContent = "没有可导出的内容";
+    return;
+  }
+
+  const blob = new Blob([exportFile.content], { type: exportFile.type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
 
   anchor.href = url;
-  anchor.download = `${safeFilename(title)}.md`;
+  anchor.download = exportFile.filename;
   anchor.click();
   URL.revokeObjectURL(url);
+  saveStatus.textContent = `已导出：${exportFile.label}`;
 }
 
 function clearHistory() {
@@ -279,6 +290,86 @@ function updatePreview() {
 
   const source = title ? `# ${title}\n\n${body}` : body;
   previewPanel.innerHTML = renderMarkdown(source);
+}
+
+function buildExportNote(title, body) {
+  const activeNote = notes.find((note) => note.id === activeNoteId);
+
+  return {
+    id: activeNote?.id || null,
+    title,
+    body,
+    createdAt: activeNote?.createdAt || null,
+    updatedAt: activeNote?.updatedAt || new Date().toISOString(),
+  };
+}
+
+function buildExportFile(note, format) {
+  const filename = safeFilename(note.title);
+
+  if (format === "all-json") {
+    if (!notes.length) return null;
+
+    return {
+      content: JSON.stringify({ exportedAt: new Date().toISOString(), notes }, null, 2),
+      filename: "flow-notes-backup.json",
+      label: "全部 JSON",
+      type: "application/json;charset=utf-8",
+    };
+  }
+
+  const formats = {
+    markdown: {
+      content: `# ${note.title}\n\n${note.body}\n`,
+      extension: "md",
+      label: "Markdown",
+      type: "text/markdown;charset=utf-8",
+    },
+    text: {
+      content: `${note.title}\n\n${note.body}\n`,
+      extension: "txt",
+      label: "TXT",
+      type: "text/plain;charset=utf-8",
+    },
+    html: {
+      content: buildHtmlDocument(note),
+      extension: "html",
+      label: "HTML",
+      type: "text/html;charset=utf-8",
+    },
+    json: {
+      content: JSON.stringify(note, null, 2),
+      extension: "json",
+      label: "JSON",
+      type: "application/json;charset=utf-8",
+    },
+  };
+
+  const exportFormat = formats[format] || formats.markdown;
+  return {
+    ...exportFormat,
+    filename: `${filename}.${exportFormat.extension}`,
+  };
+}
+
+function buildHtmlDocument(note) {
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>${escapeHtml(note.title)}</title>
+  <style>
+    body { max-width: 760px; margin: 48px auto; padding: 0 22px; font-family: "Segoe UI", Arial, sans-serif; color: #20231f; line-height: 1.75; }
+    h1 { line-height: 1.2; }
+    code { padding: 2px 6px; border-radius: 6px; background: #eef4ef; }
+    a { color: #16645a; }
+  </style>
+</head>
+<body>
+${renderMarkdown(`# ${note.title}\n\n${note.body}`)}
+</body>
+</html>`;
 }
 
 function markDraft() {
