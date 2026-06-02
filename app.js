@@ -1,5 +1,7 @@
 const STORAGE_KEY = "flow-notes-history";
 const DRAFT_KEY = "flow-notes-draft";
+const THEME_KEY = "flow-notes-theme";
+const VIEW_KEY = "flow-notes-view";
 
 const titleInput = document.querySelector("#titleInput");
 const noteInput = document.querySelector("#noteInput");
@@ -7,32 +9,46 @@ const saveButton = document.querySelector("#saveButton");
 const newNoteButton = document.querySelector("#newNoteButton");
 const exportButton = document.querySelector("#exportButton");
 const clearButton = document.querySelector("#clearButton");
+const themeButton = document.querySelector("#themeButton");
 const searchInput = document.querySelector("#searchInput");
 const historyList = document.querySelector("#historyList");
 const noteCount = document.querySelector("#noteCount");
 const saveStatus = document.querySelector("#saveStatus");
 const wordCount = document.querySelector("#wordCount");
+const workspace = document.querySelector("#workspace");
+const previewPanel = document.querySelector("#previewPanel");
+const viewButtons = document.querySelectorAll(".tab-button");
 const template = document.querySelector("#historyItemTemplate");
 
 let notes = loadNotes();
 let activeNoteId = notes[0]?.id ?? null;
+let activeView = localStorage.getItem(VIEW_KEY) || "edit";
 
+applyTheme(loadTheme());
+applyView(activeView);
 render();
 syncEditorFromDraftOrActiveNote();
+updatePreview();
 
 saveButton.addEventListener("click", saveCurrentNote);
 newNoteButton.addEventListener("click", startFreshNote);
 exportButton.addEventListener("click", exportCurrentNote);
 clearButton.addEventListener("click", clearHistory);
+themeButton.addEventListener("click", toggleTheme);
 searchInput.addEventListener("input", renderHistory);
 noteInput.addEventListener("input", () => {
   updateWordCount();
+  updatePreview();
   markDraft();
   saveDraft();
 });
 titleInput.addEventListener("input", () => {
+  updatePreview();
   markDraft();
   saveDraft();
+});
+viewButtons.forEach((button) => {
+  button.addEventListener("click", () => applyView(button.dataset.view));
 });
 
 function loadNotes() {
@@ -59,6 +75,7 @@ function loadDraft() {
 
 function saveDraft() {
   const draft = {
+    activeNoteId,
     title: titleInput.value,
     body: noteInput.value,
     updatedAt: new Date().toISOString(),
@@ -81,19 +98,31 @@ function saveCurrentNote() {
   }
 
   const now = new Date();
-  const note = {
-    id: createNoteId(),
-    title,
-    body,
-    createdAt: now.toISOString(),
-  };
+  const activeNote = notes.find((note) => note.id === activeNoteId);
 
-  notes = [note, ...notes];
-  activeNoteId = note.id;
+  if (activeNote) {
+    activeNote.title = title;
+    activeNote.body = body;
+    activeNote.updatedAt = now.toISOString();
+    notes = [activeNote, ...notes.filter((note) => note.id !== activeNote.id)];
+    saveStatus.textContent = `已更新：${formatDate(now)}`;
+  } else {
+    const note = {
+      id: createNoteId(),
+      title,
+      body,
+      createdAt: now.toISOString(),
+      updatedAt: now.toISOString(),
+    };
+
+    notes = [note, ...notes];
+    activeNoteId = note.id;
+    saveStatus.textContent = `已保存：${formatDate(now)}`;
+  }
+
   persistNotes();
   clearDraft();
   render();
-  saveStatus.textContent = `已保存：${formatDate(now)}`;
 }
 
 function startFreshNote() {
@@ -103,6 +132,7 @@ function startFreshNote() {
   saveStatus.textContent = "新笔记";
   clearDraft();
   updateWordCount();
+  updatePreview();
   renderHistory();
   titleInput.focus();
 }
@@ -135,10 +165,13 @@ function deleteNote(id) {
 function syncEditorFromDraftOrActiveNote() {
   const draft = loadDraft();
   if (draft && (draft.title || draft.body)) {
+    const draftNoteExists = notes.some((note) => note.id === draft.activeNoteId);
+    activeNoteId = draftNoteExists ? draft.activeNoteId : null;
     titleInput.value = draft.title || "";
     noteInput.value = draft.body || "";
     saveStatus.textContent = `草稿已恢复：${formatDate(new Date(draft.updatedAt))}`;
     updateWordCount();
+    updatePreview();
     return;
   }
 
@@ -152,13 +185,15 @@ function syncEditorFromActiveNote() {
     titleInput.value = "";
     noteInput.value = "";
     updateWordCount();
+    updatePreview();
     return;
   }
 
   titleInput.value = activeNote.title;
   noteInput.value = activeNote.body;
-  saveStatus.textContent = `已恢复：${formatDate(new Date(activeNote.createdAt))}`;
+  saveStatus.textContent = `正在编辑：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`;
   updateWordCount();
+  updatePreview();
 }
 
 function exportCurrentNote() {
@@ -233,8 +268,107 @@ function updateWordCount() {
   wordCount.textContent = `${compact.length} 字`;
 }
 
+function updatePreview() {
+  const title = titleInput.value.trim();
+  const body = noteInput.value.trim();
+
+  if (!title && !body) {
+    previewPanel.innerHTML = '<p class="preview-empty">预览会显示在这里</p>';
+    return;
+  }
+
+  const source = title ? `# ${title}\n\n${body}` : body;
+  previewPanel.innerHTML = renderMarkdown(source);
+}
+
 function markDraft() {
   saveStatus.textContent = "正在编辑";
+}
+
+function applyView(view) {
+  activeView = ["edit", "split", "preview"].includes(view) ? view : "edit";
+  workspace.dataset.view = activeView;
+  localStorage.setItem(VIEW_KEY, activeView);
+  viewButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === activeView);
+  });
+}
+
+function loadTheme() {
+  const storedTheme = localStorage.getItem(THEME_KEY);
+  if (storedTheme) return storedTheme;
+
+  return window.matchMedia?.("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+}
+
+function applyTheme(theme) {
+  const nextTheme = theme === "dark" ? "dark" : "light";
+  document.documentElement.dataset.theme = nextTheme;
+  themeButton.textContent = nextTheme === "dark" ? "☀" : "◐";
+  localStorage.setItem(THEME_KEY, nextTheme);
+}
+
+function toggleTheme() {
+  const currentTheme = document.documentElement.dataset.theme;
+  applyTheme(currentTheme === "dark" ? "light" : "dark");
+}
+
+function renderMarkdown(markdown) {
+  const lines = markdown.split(/\r?\n/);
+  const blocks = [];
+  let listItems = [];
+
+  lines.forEach((line) => {
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      flushList();
+      return;
+    }
+
+    const listMatch = trimmed.match(/^[-*]\s+(.+)$/);
+    if (listMatch) {
+      listItems.push(`<li>${renderInline(listMatch[1])}</li>`);
+      return;
+    }
+
+    flushList();
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      const level = heading[1].length;
+      blocks.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+      return;
+    }
+
+    blocks.push(`<p>${renderInline(trimmed)}</p>`);
+  });
+
+  flushList();
+  return blocks.join("");
+
+  function flushList() {
+    if (!listItems.length) return;
+    blocks.push(`<ul>${listItems.join("")}</ul>`);
+    listItems = [];
+  }
+}
+
+function renderInline(value) {
+  return escapeHtml(value)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+}
+
+function escapeHtml(value) {
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 function formatDate(date) {

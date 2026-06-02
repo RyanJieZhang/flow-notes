@@ -14,9 +14,10 @@
           <p class="eyebrow">Flow Notes</p>
           <h1>笔记</h1>
         </div>
-        <button class="icon-button" id="newNoteButton" type="button" title="新建笔记" aria-label="新建笔记">
-          +
-        </button>
+        <div class="panel-actions">
+          <button class="icon-button theme-button" id="themeButton" type="button" title="切换深色模式" aria-label="切换深色模式">◐</button>
+          <button class="icon-button" id="newNoteButton" type="button" title="新建笔记" aria-label="新建笔记">+</button>
+        </div>
       </div>
 
       <label class="search-box">
@@ -36,12 +37,20 @@
       <div class="editor-toolbar">
         <input id="titleInput" class="title-input" type="text" placeholder="给这条笔记起个标题">
         <div class="toolbar-actions">
+          <div class="view-tabs" role="group" aria-label="视图切换">
+            <button class="tab-button active" id="editViewButton" type="button" data-view="edit">编辑</button>
+            <button class="tab-button" id="splitViewButton" type="button" data-view="split">分屏</button>
+            <button class="tab-button" id="previewViewButton" type="button" data-view="preview">预览</button>
+          </div>
           <button id="exportButton" class="ghost-button" type="button">导出</button>
           <button id="saveButton" class="primary-button" type="button">保存</button>
         </div>
       </div>
 
-      <textarea id="noteInput" class="note-input" placeholder="把想法写在这里。每次保存都会生成一条历史记录，之后可以随时点开恢复。"></textarea>
+      <div class="workspace" id="workspace" data-view="edit">
+        <textarea id="noteInput" class="note-input" placeholder="把想法写在这里。支持 Markdown，保存后可以继续编辑，也可以切到预览查看排版。"></textarea>
+        <article class="preview-panel" id="previewPanel" aria-label="Markdown 预览"></article>
+      </div>
 
       <footer class="status-bar">
         <span id="saveStatus">尚未保存</span>
