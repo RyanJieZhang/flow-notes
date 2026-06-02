@@ -12,4 +12,4 @@
 
 启用 GitHub Pages 后，可以访问：
 
-https://RyanJieZhang.github.io/flow-notes/
+https://ryanjiezhang.github.io/flow-notes/
