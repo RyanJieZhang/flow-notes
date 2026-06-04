@@ -461,7 +461,9 @@ h1 {
 }
 
 .preview-panel p,
-.preview-panel ul {
+.preview-panel ul,
+.preview-panel pre,
+.preview-panel .table-wrap {
   margin: 0 0 16px;
   color: var(--ink);
   font-size: 17px;
@@ -477,6 +479,57 @@ h1 {
   border-radius: 6px;
   background: var(--surface-soft);
   color: var(--accent-strong);
+}
+
+.preview-panel pre {
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.preview-panel pre code {
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.preview-panel img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 0 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+}
+
+.preview-panel .table-wrap {
+  overflow: auto;
+}
+
+.preview-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+}
+
+.preview-panel th,
+.preview-panel td {
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.preview-panel th {
+  background: var(--surface-soft);
+  color: var(--accent-strong);
+  font-weight: 800;
 }
 
 .preview-panel a {

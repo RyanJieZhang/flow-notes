@@ -583,6 +583,13 @@ function buildHtmlDocument(note, autoPrint = false) {
     .print-action button { border: 0; border-radius: 8px; background: #16645a; color: #fff; cursor: pointer; font: inherit; font-weight: 700; padding: 10px 16px; }
     h1 { line-height: 1.2; }
     code { padding: 2px 6px; border-radius: 6px; background: #eef4ef; }
+    pre { overflow: auto; padding: 16px; border: 1px solid #dce2d8; border-radius: 8px; background: #eef4ef; }
+    pre code { padding: 0; background: transparent; color: #20231f; font-family: Consolas, monospace; font-size: 14px; }
+    img { display: block; max-width: 100%; height: auto; margin: 0 0 16px; border-radius: 8px; border: 1px solid #dce2d8; }
+    .table-wrap { overflow: auto; margin: 0 0 16px; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #dce2d8; text-align: left; vertical-align: top; }
+    th { background: #eef4ef; color: #16645a; }
     a { color: #16645a; }
     @media print { body { max-width: none; margin: 0; padding: 0; } .print-action { display: none; } }
   </style>
@@ -631,19 +638,48 @@ function renderMarkdown(markdown) {
   const lines = markdown.split(/\r?\n/);
   const blocks = [];
   let listItems = [];
+  let index = 0;
 
-  lines.forEach((line) => {
+  while (index < lines.length) {
+    const line = lines[index];
     const trimmed = line.trim();
 
     if (!trimmed) {
       flushList();
-      return;
+      index += 1;
+      continue;
+    }
+
+    const fenceMatch = trimmed.match(/^```([\w-]*)\s*$/);
+    if (fenceMatch) {
+      flushList();
+      const language = fenceMatch[1] ? ` language-${escapeAttribute(fenceMatch[1])}` : "";
+      const codeLines = [];
+      index += 1;
+
+      while (index < lines.length && !lines[index].trim().startsWith("```")) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+
+      blocks.push(`<pre><code class="${language.trim()}">${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      index += 1;
+      continue;
+    }
+
+    if (isTableStart(lines, index)) {
+      flushList();
+      const table = parseTable(lines, index);
+      blocks.push(renderTable(table.headers, table.rows));
+      index = table.nextIndex;
+      continue;
     }
 
     const listMatch = trimmed.match(/^[-*]\s+(.+)$/);
     if (listMatch) {
       listItems.push(`<li>${renderInline(listMatch[1])}</li>`);
-      return;
+      index += 1;
+      continue;
     }
 
     flushList();
@@ -652,11 +688,13 @@ function renderMarkdown(markdown) {
     if (heading) {
       const level = heading[1].length;
       blocks.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
-      return;
+      index += 1;
+      continue;
     }
 
     blocks.push(`<p>${renderInline(trimmed)}</p>`);
-  });
+    index += 1;
+  }
 
   flushList();
   return blocks.join("");
@@ -670,10 +708,17 @@ function renderMarkdown(markdown) {
 
 function renderInline(value) {
   return escapeHtml(value)
+    .replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, url) => {
+      const safeUrl = sanitizeUrl(url);
+      return safeUrl ? `<img src="${safeUrl}" alt="${alt}">` : "";
+    })
     .replace(/`([^`]+)`/g, "<code>$1</code>")
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noreferrer">$1</a>');
+    .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, text, url) => {
+      const safeUrl = sanitizeUrl(url);
+      return safeUrl ? `<a href="${safeUrl}" target="_blank" rel="noreferrer">${text}</a>` : text;
+    });
 }
 
 function escapeHtml(value) {
@@ -683,6 +728,65 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+function escapeAttribute(value) {
+  return escapeHtml(value).replace(/\s+/g, "-");
+}
+
+function sanitizeUrl(value) {
+  const decoded = value.replace(/&amp;/g, "&").trim();
+  const isSafe =
+    /^(https?:|mailto:)/i.test(decoded) ||
+    /^data:image\/(png|gif|jpe?g|webp|svg\+xml);base64,/i.test(decoded) ||
+    /^[./#][^\s]*$/.test(decoded);
+
+  return isSafe ? escapeHtml(decoded) : "";
+}
+
+function isTableStart(lines, index) {
+  return hasTableCells(lines[index]) && index + 1 < lines.length && isTableSeparator(lines[index + 1]);
+}
+
+function hasTableCells(line) {
+  return line.includes("|") && splitTableRow(line).length > 1;
+}
+
+function isTableSeparator(line) {
+  const cells = splitTableRow(line);
+  return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell.trim()));
+}
+
+function parseTable(lines, startIndex) {
+  const headers = splitTableRow(lines[startIndex]);
+  const rows = [];
+  let index = startIndex + 2;
+
+  while (index < lines.length && hasTableCells(lines[index])) {
+    rows.push(splitTableRow(lines[index]));
+    index += 1;
+  }
+
+  return { headers, rows, nextIndex: index };
+}
+
+function splitTableRow(line) {
+  return line
+    .trim()
+    .replace(/^\|/, "")
+    .replace(/\|$/, "")
+    .split("|")
+    .map((cell) => cell.trim());
+}
+
+function renderTable(headers, rows) {
+  const head = headers.map((header) => `<th>${renderInline(header)}</th>`).join("");
+  const body = rows.map((row) => {
+    const cells = headers.map((_, cellIndex) => `<td>${renderInline(row[cellIndex] || "")}</td>`).join("");
+    return `<tr>${cells}</tr>`;
+  }).join("");
+
+  return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function formatDate(date) {
