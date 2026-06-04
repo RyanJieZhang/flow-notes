@@ -68,6 +68,7 @@ archiveButton.addEventListener("click", toggleArchived);
 viewButtons.forEach((button) => {
   button.addEventListener("click", () => applyView(button.dataset.view));
 });
+previewPanel.addEventListener("click", handlePreviewAction);
 
 function loadNotes() {
   try {
@@ -402,6 +403,27 @@ function updatePreview() {
   previewPanel.innerHTML = renderMarkdown(source);
 }
 
+function handlePreviewAction(event) {
+  const actionButton = event.target.closest("[data-code-action]");
+  if (!actionButton) return;
+
+  const codeBlock = actionButton.closest(".code-block");
+  if (!codeBlock) return;
+
+  const language = codeBlock.dataset.language || "";
+  const code = decodeURIComponent(codeBlock.dataset.code || "");
+  const output = codeBlock.querySelector(".code-output");
+
+  if (actionButton.dataset.codeAction === "run-js") {
+    runJavaScript(code, output);
+    return;
+  }
+
+  if (actionButton.dataset.codeAction === "preview-html") {
+    previewHtml(code, output);
+  }
+}
+
 function buildExportNote(title, body) {
   const activeNote = notes.find((note) => note.id === activeNoteId);
 
@@ -596,7 +618,7 @@ function buildHtmlDocument(note, autoPrint = false) {
 </head>
 <body>
 ${autoPrint ? '<div class="print-action"><button type="button" onclick="window.print()">保存为 PDF</button></div>' : ""}
-${renderMarkdown(`# ${note.title}\n\n${note.body}`)}
+${renderMarkdown(`# ${note.title}\n\n${note.body}`, { interactiveCode: false })}
 ${autoPrint ? "<script>window.addEventListener('load', () => setTimeout(() => window.print(), 150));<\/script>" : ""}
 </body>
 </html>`;
@@ -634,7 +656,8 @@ function toggleTheme() {
   applyTheme(currentTheme === "dark" ? "light" : "dark");
 }
 
-function renderMarkdown(markdown) {
+function renderMarkdown(markdown, options = {}) {
+  const interactiveCode = options.interactiveCode !== false;
   const lines = markdown.split(/\r?\n/);
   const blocks = [];
   let listItems = [];
@@ -662,7 +685,7 @@ function renderMarkdown(markdown) {
         index += 1;
       }
 
-      blocks.push(`<pre><code class="${language.trim()}">${escapeHtml(codeLines.join("\n"))}</code></pre>`);
+      blocks.push(renderCodeBlock(codeLines.join("\n"), fenceMatch[1], interactiveCode));
       index += 1;
       continue;
     }
@@ -703,6 +726,79 @@ function renderMarkdown(markdown) {
     if (!listItems.length) return;
     blocks.push(`<ul>${listItems.join("")}</ul>`);
     listItems = [];
+  }
+}
+
+function renderCodeBlock(code, rawLanguage, interactiveCode) {
+  const language = normalizeLanguage(rawLanguage);
+  const languageClass = language ? ` language-${escapeAttribute(language)}` : "";
+  const encodedCode = encodeURIComponent(code);
+  const label = language || "code";
+  const action = interactiveCode ? getCodeAction(language) : "";
+  const output = interactiveCode ? '<div class="code-output" aria-live="polite"></div>' : "";
+
+  return `<div class="code-block" data-language="${escapeAttribute(language)}" data-code="${encodedCode}">
+    <div class="code-toolbar">
+      <span>${escapeHtml(label)}</span>
+      ${action}
+    </div>
+    <pre><code class="${languageClass.trim()}">${escapeHtml(code)}</code></pre>
+    ${output}
+  </div>`;
+}
+
+function getCodeAction(language) {
+  if (["js", "javascript"].includes(language)) {
+    return '<button type="button" data-code-action="run-js">运行</button>';
+  }
+
+  if (language === "html") {
+    return '<button type="button" data-code-action="preview-html">预览</button>';
+  }
+
+  return '<span class="code-note">暂不支持运行</span>';
+}
+
+function normalizeLanguage(language) {
+  return String(language || "").trim().toLowerCase();
+}
+
+function runJavaScript(code, output) {
+  const logs = [];
+  const sandboxConsole = {
+    log: (...values) => logs.push(values.map(formatConsoleValue).join(" ")),
+    warn: (...values) => logs.push(`Warning: ${values.map(formatConsoleValue).join(" ")}`),
+    error: (...values) => logs.push(`Error: ${values.map(formatConsoleValue).join(" ")}`),
+  };
+
+  try {
+    const result = Function("console", `"use strict";\n${code}`)(sandboxConsole);
+    if (result !== undefined) {
+      logs.push(formatConsoleValue(result));
+    }
+    output.textContent = logs.length ? logs.join("\n") : "运行完成，无输出";
+    output.classList.remove("error");
+  } catch (error) {
+    output.textContent = error.message;
+    output.classList.add("error");
+  }
+}
+
+function previewHtml(code, output) {
+  const iframe = document.createElement("iframe");
+  iframe.setAttribute("sandbox", "");
+  iframe.srcdoc = code;
+  output.replaceChildren(iframe);
+  output.classList.remove("error");
+}
+
+function formatConsoleValue(value) {
+  if (typeof value === "string") return value;
+
+  try {
+    return JSON.stringify(value, null, 2);
+  } catch {
+    return String(value);
   }
 }
 
