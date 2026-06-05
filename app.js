@@ -7,6 +7,7 @@ const titleInput = document.querySelector("#titleInput");
 const noteInput = document.querySelector("#noteInput");
 const saveButton = document.querySelector("#saveButton");
 const newNoteButton = document.querySelector("#newNoteButton");
+const codeBlockButton = document.querySelector("#codeBlockButton");
 const exportButton = document.querySelector("#exportButton");
 const exportFormatSelect = document.querySelector("#exportFormatSelect");
 const clearButton = document.querySelector("#clearButton");
@@ -40,6 +41,7 @@ updatePreview();
 
 saveButton.addEventListener("click", saveCurrentNote);
 newNoteButton.addEventListener("click", startFreshNote);
+codeBlockButton.addEventListener("click", insertPythonCodeBlock);
 exportButton.addEventListener("click", exportCurrentNote);
 clearButton.addEventListener("click", clearHistory);
 importButton.addEventListener("click", () => importInput.click());
@@ -401,6 +403,28 @@ function updatePreview() {
 
   const source = title ? `# ${title}\n\n${body}` : body;
   previewPanel.innerHTML = renderMarkdown(source);
+}
+
+function insertPythonCodeBlock() {
+  applyView(activeView === "preview" ? "edit" : activeView);
+
+  const template = '```python\n# 在这里写 Python 代码\nprint("Hello Flow Notes")\n```';
+  const selectionStart = noteInput.selectionStart;
+  const selectionEnd = noteInput.selectionEnd;
+  const before = noteInput.value.slice(0, selectionStart);
+  const after = noteInput.value.slice(selectionEnd);
+  const needsLeadingBreak = before && !before.endsWith("\n") ? "\n\n" : "";
+  const needsTrailingBreak = after && !after.startsWith("\n") ? "\n\n" : "";
+  const insertText = `${needsLeadingBreak}${template}${needsTrailingBreak}`;
+  const cursorOffset = needsLeadingBreak.length + "```python\n".length;
+
+  noteInput.value = `${before}${insertText}${after}`;
+  noteInput.focus();
+  noteInput.setSelectionRange(selectionStart + cursorOffset, selectionStart + cursorOffset + "# 在这里写 Python 代码".length);
+  updateWordCount();
+  updatePreview();
+  markDraft();
+  saveDraft();
 }
 
 function handlePreviewAction(event) {
