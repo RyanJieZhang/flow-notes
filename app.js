@@ -414,6 +414,11 @@ function handlePreviewAction(event) {
   const code = decodeURIComponent(codeBlock.dataset.code || "");
   const output = codeBlock.querySelector(".code-output");
 
+  if (actionButton.dataset.codeAction === "copy-code") {
+    copyCode(code, actionButton);
+    return;
+  }
+
   if (actionButton.dataset.codeAction === "run-js") {
     runJavaScript(code, output);
     return;
@@ -740,7 +745,10 @@ function renderCodeBlock(code, rawLanguage, interactiveCode) {
   return `<div class="code-block" data-language="${escapeAttribute(language)}" data-code="${encodedCode}">
     <div class="code-toolbar">
       <span>${escapeHtml(label)}</span>
-      ${action}
+      <div class="code-actions">
+        <button type="button" data-code-action="copy-code">复制</button>
+        ${action}
+      </div>
     </div>
     <pre><code class="${languageClass.trim()}">${escapeHtml(code)}</code></pre>
     ${output}
@@ -764,42 +772,124 @@ function normalizeLanguage(language) {
 }
 
 function runJavaScript(code, output) {
-  const logs = [];
-  const sandboxConsole = {
-    log: (...values) => logs.push(values.map(formatConsoleValue).join(" ")),
-    warn: (...values) => logs.push(`Warning: ${values.map(formatConsoleValue).join(" ")}`),
-    error: (...values) => logs.push(`Error: ${values.map(formatConsoleValue).join(" ")}`),
-  };
+  output.textContent = "正在运行...";
+  output.classList.remove("error");
 
-  try {
-    const result = Function("console", `"use strict";\n${code}`)(sandboxConsole);
-    if (result !== undefined) {
-      logs.push(formatConsoleValue(result));
-    }
-    output.textContent = logs.length ? logs.join("\n") : "运行完成，无输出";
-    output.classList.remove("error");
-  } catch (error) {
-    output.textContent = error.message;
+  const runId = createNoteId();
+  const blob = new Blob([buildJavaScriptRunner(code, runId)], { type: "text/javascript" });
+  const workerUrl = URL.createObjectURL(blob);
+  const worker = new Worker(workerUrl);
+  const timeout = window.setTimeout(() => {
+    cleanup();
+    output.textContent = "运行超时";
     output.classList.add("error");
+  }, 3000);
+
+  worker.addEventListener("message", (event) => {
+    if (event.data?.runId !== runId) return;
+
+    if (event.data.type === "log") {
+      output.textContent = appendOutput(output.textContent, event.data.payload);
+      return;
+    }
+
+    if (event.data.type === "error") {
+      cleanup();
+      output.textContent = event.data.payload || "运行失败";
+      output.classList.add("error");
+      return;
+    }
+
+    if (event.data.type === "done") {
+      cleanup();
+      output.textContent = output.textContent === "正在运行..." ? "运行完成，无输出" : output.textContent;
+    }
+  });
+  worker.addEventListener("error", (event) => {
+    cleanup();
+    output.textContent = event.message || "运行失败";
+    output.classList.add("error");
+  });
+
+  function cleanup() {
+    window.clearTimeout(timeout);
+    worker.terminate();
+    URL.revokeObjectURL(workerUrl);
   }
+}
+
+function buildJavaScriptRunner(code, runId) {
+  return `
+const runId = ${JSON.stringify(runId)};
+const userCode = ${JSON.stringify(code)};
+const send = (type, payload) => postMessage({ runId, type, payload });
+const format = (value) => {
+  if (typeof value === "string") return value;
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+};
+const sandboxConsole = {
+  log: (...values) => send("log", values.map(format).join(" ")),
+  warn: (...values) => send("log", "Warning: " + values.map(format).join(" ")),
+  error: (...values) => send("log", "Error: " + values.map(format).join(" ")),
+};
+self.addEventListener("error", (event) => send("error", event.message));
+self.addEventListener("unhandledrejection", (event) => send("error", event.reason?.message || String(event.reason)));
+(async () => {
+  try {
+    const runner = new Function("console", '"use strict"; return (async () => {\\n' + userCode + '\\n})();');
+    const result = await runner(sandboxConsole);
+    if (result !== undefined) send("log", format(result));
+    send("done");
+  } catch (error) {
+    send("error", error.message);
+  }
+})();
+`;
+}
+
+function appendOutput(currentOutput, nextLine) {
+  return currentOutput && currentOutput !== "正在运行..." ? `${currentOutput}\n${nextLine}` : nextLine;
+}
+
+async function copyCode(code, button) {
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(code);
+    } else {
+      fallbackCopy(code);
+    }
+    flashButton(button, "已复制");
+  } catch {
+    fallbackCopy(code);
+    flashButton(button, "已复制");
+  }
+}
+
+function fallbackCopy(value) {
+  const textarea = document.createElement("textarea");
+  textarea.value = value;
+  textarea.style.position = "fixed";
+  textarea.style.opacity = "0";
+  document.body.append(textarea);
+  textarea.select();
+  document.execCommand("copy");
+  textarea.remove();
+}
+
+function flashButton(button, label) {
+  const originalLabel = button.textContent;
+  button.textContent = label;
+  window.setTimeout(() => {
+    button.textContent = originalLabel;
+  }, 1200);
 }
 
 function previewHtml(code, output) {
   const iframe = document.createElement("iframe");
-  iframe.setAttribute("sandbox", "");
+  iframe.setAttribute("sandbox", "allow-forms");
   iframe.srcdoc = code;
   output.replaceChildren(iframe);
   output.classList.remove("error");
-}
-
-function formatConsoleValue(value) {
-  if (typeof value === "string") return value;
-
-  try {
-    return JSON.stringify(value, null, 2);
-  } catch {
-    return String(value);
-  }
 }
 
 function renderInline(value) {

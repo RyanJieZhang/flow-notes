@@ -516,6 +516,12 @@ h1 {
   color: var(--ink);
 }
 
+.preview-panel .code-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 8px;
+}
+
 .preview-panel .code-note {
   color: var(--muted);
   font-weight: 700;
