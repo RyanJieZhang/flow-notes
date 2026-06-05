@@ -14,6 +14,10 @@ const clearButton = document.querySelector("#clearButton");
 const importButton = document.querySelector("#importButton");
 const importInput = document.querySelector("#importInput");
 const themeButton = document.querySelector("#themeButton");
+const changelogButton = document.querySelector("#changelogButton");
+const changelogDialog = document.querySelector("#changelogDialog");
+const closeChangelogButton = document.querySelector("#closeChangelogButton");
+const changelogList = document.querySelector("#changelogList");
 const searchInput = document.querySelector("#searchInput");
 const statusFilter = document.querySelector("#statusFilter");
 const tagFilter = document.querySelector("#tagFilter");
@@ -28,6 +32,37 @@ const workspace = document.querySelector("#workspace");
 const previewPanel = document.querySelector("#previewPanel");
 const viewButtons = document.querySelectorAll(".tab-button");
 const template = document.querySelector("#historyItemTemplate");
+
+const CHANGELOG_ENTRIES = [
+  {
+    date: "2026/06/05",
+    title: "今日更新",
+    items: [
+      "新增更新日志入口，可以直接查看今天和近期做了什么功能。",
+      "Python 代码块支持在浏览器中运行，并会自动加载 Pyodide 支持的依赖库。",
+      "编辑器支持 Tab 缩进、Shift+Tab 反缩进，以及回车自动延续缩进。",
+      "新增 +代码块 按钮，一键插入 Python 模板。",
+    ],
+  },
+  {
+    date: "2026/06/04",
+    title: "代码与 Markdown 增强",
+    items: [
+      "Markdown 预览支持表格、图片和围栏代码块。",
+      "代码块支持复制，JavaScript 支持沙箱运行，HTML 支持 iframe 预览。",
+      "导出格式扩展为 Markdown、TXT、HTML、PDF、JSON 和全部 JSON 备份。",
+    ],
+  },
+  {
+    date: "2026/06/03",
+    title: "笔记管理升级",
+    items: [
+      "支持编辑已有笔记，避免重复保存出多条相同记录。",
+      "新增标签、置顶、归档、搜索和状态过滤。",
+      "新增浅色 / 深色模式切换，适合白天和夜间使用。",
+    ],
+  },
+];
 
 let notes = loadNotes();
 let activeNoteId = notes[0]?.id ?? null;
@@ -48,6 +83,14 @@ clearButton.addEventListener("click", clearHistory);
 importButton.addEventListener("click", () => importInput.click());
 importInput.addEventListener("change", importNotes);
 themeButton.addEventListener("click", toggleTheme);
+changelogButton.addEventListener("click", openChangelog);
+closeChangelogButton.addEventListener("click", closeChangelog);
+changelogDialog.addEventListener("click", (event) => {
+  if (event.target === changelogDialog) closeChangelog();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !changelogDialog.hidden) closeChangelog();
+});
 searchInput.addEventListener("input", renderHistory);
 statusFilter.addEventListener("change", renderHistory);
 tagFilter.addEventListener("change", renderHistory);
@@ -316,6 +359,47 @@ function render() {
   renderTagFilter();
   renderHistory();
   updateWordCount();
+}
+
+function openChangelog() {
+  renderChangelog();
+  changelogDialog.hidden = false;
+  closeChangelogButton.focus();
+}
+
+function closeChangelog() {
+  changelogDialog.hidden = true;
+  changelogButton.focus();
+}
+
+function renderChangelog() {
+  changelogList.innerHTML = "";
+
+  CHANGELOG_ENTRIES.forEach((entry) => {
+    const article = document.createElement("article");
+    article.className = "changelog-entry";
+
+    const header = document.createElement("div");
+    header.className = "changelog-entry-header";
+
+    const title = document.createElement("h3");
+    title.textContent = entry.title;
+
+    const time = document.createElement("time");
+    time.dateTime = entry.date.replaceAll("/", "-");
+    time.textContent = entry.date;
+
+    const list = document.createElement("ul");
+    entry.items.forEach((item) => {
+      const listItem = document.createElement("li");
+      listItem.textContent = item;
+      list.append(listItem);
+    });
+
+    header.append(title, time);
+    article.append(header, list);
+    changelogList.append(article);
+  });
 }
 
 function renderHistory() {
