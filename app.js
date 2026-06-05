@@ -57,6 +57,7 @@ noteInput.addEventListener("input", () => {
   markDraft();
   saveDraft();
 });
+noteInput.addEventListener("keydown", handleEditorKeydown);
 titleInput.addEventListener("input", () => {
   updatePreview();
   markDraft();
@@ -422,6 +423,76 @@ function insertPythonCodeBlock() {
   noteInput.value = `${before}${insertText}${after}`;
   noteInput.focus();
   noteInput.setSelectionRange(selectionStart + cursorOffset, selectionStart + cursorOffset + "# 在这里写 Python 代码".length);
+  updateWordCount();
+  updatePreview();
+  markDraft();
+  saveDraft();
+}
+
+function handleEditorKeydown(event) {
+  if (event.key === "Tab") {
+    event.preventDefault();
+    if (event.shiftKey) {
+      unindentSelection();
+    } else {
+      indentSelection();
+    }
+    updateEditorState();
+    return;
+  }
+
+  if (event.key === "Enter") {
+    const lineStart = noteInput.value.lastIndexOf("\n", noteInput.selectionStart - 1) + 1;
+    const currentLine = noteInput.value.slice(lineStart, noteInput.selectionStart);
+    const baseIndent = currentLine.match(/^\s*/)?.[0] || "";
+    const indent = currentLine.trimEnd().endsWith(":") ? `${baseIndent}    ` : baseIndent;
+
+    if (indent) {
+      event.preventDefault();
+      replaceSelection(`\n${indent}`);
+      updateEditorState();
+    }
+  }
+}
+
+function indentSelection() {
+  const start = noteInput.selectionStart;
+  const end = noteInput.selectionEnd;
+
+  if (start === end) {
+    replaceSelection("    ");
+    return;
+  }
+
+  const lineStart = noteInput.value.lastIndexOf("\n", start - 1) + 1;
+  const selectedText = noteInput.value.slice(lineStart, end);
+  const indented = selectedText.split("\n").map((line) => `    ${line}`).join("\n");
+
+  noteInput.setSelectionRange(lineStart, end);
+  replaceSelection(indented);
+  noteInput.setSelectionRange(start + 4, lineStart + indented.length);
+}
+
+function unindentSelection() {
+  const start = noteInput.selectionStart;
+  const end = noteInput.selectionEnd;
+  const lineStart = noteInput.value.lastIndexOf("\n", start - 1) + 1;
+  const selectedText = noteInput.value.slice(lineStart, end);
+  const unindented = selectedText.split("\n").map((line) => line.replace(/^( {1,4}|\t)/, "")).join("\n");
+
+  noteInput.setSelectionRange(lineStart, end);
+  replaceSelection(unindented);
+  noteInput.setSelectionRange(Math.max(lineStart, start - 4), lineStart + unindented.length);
+}
+
+function replaceSelection(value) {
+  const start = noteInput.selectionStart;
+  const end = noteInput.selectionEnd;
+  noteInput.value = `${noteInput.value.slice(0, start)}${value}${noteInput.value.slice(end)}`;
+  noteInput.setSelectionRange(start + value.length, start + value.length);
+}
+
+function updateEditorState() {
   updateWordCount();
   updatePreview();
   markDraft();
@@ -891,6 +962,10 @@ async function runPython(code, output) {
 
   try {
     const pyodide = await loadPythonRuntime();
+    output.textContent = "正在加载代码依赖...";
+    if (pyodide.loadPackagesFromImports) {
+      await pyodide.loadPackagesFromImports(code);
+    }
     output.textContent = "正在运行...";
     pyodide.globals.set("__flow_notes_code", code);
     const result = await pyodide.runPythonAsync(`
