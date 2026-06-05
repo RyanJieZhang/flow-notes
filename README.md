@@ -65,7 +65,16 @@ HTML 代码块支持在预览区打开 iframe 预览：
 ```
 ````
 
-说明：当前运行能力是前端静态网页中的轻量预览功能。JavaScript 会在 Web Worker 中隔离执行，超时后会自动终止；Python、C++、Java 等语言需要后端沙箱或第三方编译服务，GitHub Pages 无法安全提供本地编译环境。
+Python 代码块支持通过 Pyodide 在浏览器中运行：
+
+````md
+```python
+print("张杰上将")
+print(1 + 2)
+```
+````
+
+说明：当前运行能力是前端静态网页中的轻量预览功能。JavaScript 会在 Web Worker 中隔离执行，Python 会通过 Pyodide 加载浏览器版 Python 运行环境；首次运行 Python 需要联网加载资源，可能会慢一点。C++、Java 等语言仍需要后端沙箱或第三方编译服务。
 
 ## 导入导出
 

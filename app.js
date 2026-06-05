@@ -32,6 +32,7 @@ const template = document.querySelector("#historyItemTemplate");
 let notes = loadNotes();
 let activeNoteId = notes[0]?.id ?? null;
 let activeView = localStorage.getItem(VIEW_KEY) || "edit";
+let pyodideReadyPromise = null;
 
 applyTheme(loadTheme());
 applyView(activeView);
@@ -448,6 +449,11 @@ function handlePreviewAction(event) {
     return;
   }
 
+  if (actionButton.dataset.codeAction === "run-python") {
+    runPython(code, output);
+    return;
+  }
+
   if (actionButton.dataset.codeAction === "preview-html") {
     previewHtml(code, output);
   }
@@ -784,6 +790,10 @@ function getCodeAction(language) {
     return '<button type="button" data-code-action="run-js">运行</button>';
   }
 
+  if (["py", "python"].includes(language)) {
+    return '<button type="button" data-code-action="run-python">运行</button>';
+  }
+
   if (language === "html") {
     return '<button type="button" data-code-action="preview-html">预览</button>';
   }
@@ -873,6 +883,66 @@ self.addEventListener("unhandledrejection", (event) => send("error", event.reaso
 
 function appendOutput(currentOutput, nextLine) {
   return currentOutput && currentOutput !== "正在运行..." ? `${currentOutput}\n${nextLine}` : nextLine;
+}
+
+async function runPython(code, output) {
+  output.textContent = "正在加载 Python 运行环境...";
+  output.classList.remove("error");
+
+  try {
+    const pyodide = await loadPythonRuntime();
+    output.textContent = "正在运行...";
+    pyodide.globals.set("__flow_notes_code", code);
+    const result = await pyodide.runPythonAsync(`
+import contextlib
+import io
+import traceback
+
+__flow_stdout = io.StringIO()
+__flow_stderr = io.StringIO()
+
+try:
+    with contextlib.redirect_stdout(__flow_stdout), contextlib.redirect_stderr(__flow_stderr):
+        exec(__flow_notes_code, {})
+    __flow_result = __flow_stdout.getvalue() + __flow_stderr.getvalue()
+except Exception:
+    __flow_result = traceback.format_exc()
+
+__flow_result
+`);
+    output.textContent = result.trim() || "运行完成，无输出";
+    output.classList.toggle("error", result.includes("Traceback"));
+  } catch (error) {
+    output.textContent = error.message || "Python 运行失败";
+    output.classList.add("error");
+  }
+}
+
+function loadPythonRuntime() {
+  if (!pyodideReadyPromise) {
+    pyodideReadyPromise = loadScript("https://cdn.jsdelivr.net/pyodide/v0.26.4/full/pyodide.js")
+      .then(() => window.loadPyodide({
+        indexURL: "https://cdn.jsdelivr.net/pyodide/v0.26.4/full/",
+      }));
+  }
+
+  return pyodideReadyPromise;
+}
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    if (document.querySelector(`script[src="${src}"]`)) {
+      resolve();
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = src;
+    script.async = true;
+    script.addEventListener("load", resolve);
+    script.addEventListener("error", () => reject(new Error("无法加载 Python 运行环境，请检查网络连接")));
+    document.head.append(script);
+  });
 }
 
 async function copyCode(code, button) {
