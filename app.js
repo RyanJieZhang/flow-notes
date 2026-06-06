@@ -4,6 +4,7 @@ const THEME_KEY = "flow-notes-theme";
 const VIEW_KEY = "flow-notes-view";
 const SIDEBAR_WIDTH_KEY = "flow-notes-sidebar-width";
 const SIDEBAR_COLLAPSED_KEY = "flow-notes-sidebar-collapsed";
+const SPLIT_RATIO_KEY = "flow-notes-split-ratio";
 
 const appShell = document.querySelector("#appShell");
 const titleInput = document.querySelector("#titleInput");
@@ -34,6 +35,7 @@ const tagInput = document.querySelector("#tagInput");
 const pinButton = document.querySelector("#pinButton");
 const archiveButton = document.querySelector("#archiveButton");
 const workspace = document.querySelector("#workspace");
+const splitResizer = document.querySelector("#splitResizer");
 const previewPanel = document.querySelector("#previewPanel");
 const viewButtons = document.querySelectorAll(".tab-button");
 const template = document.querySelector("#historyItemTemplate");
@@ -45,6 +47,7 @@ const CHANGELOG_ENTRIES = [
     items: [
       "新增历史栏拖拽调整宽度，半屏写笔记时可以把左侧空间让给编辑区。",
       "新增历史栏一键收起按钮，窄窗口下只保留一个展开入口。",
+      "新增分屏比例拖拽，编辑区和预览区的宽度可以按当前任务自由调整。",
       "系统会记住历史栏宽度和收起状态，下次打开继续沿用。",
     ],
   },
@@ -83,10 +86,12 @@ let activeNoteId = notes[0]?.id ?? null;
 let activeView = localStorage.getItem(VIEW_KEY) || "edit";
 let sidebarWidth = loadSidebarWidth();
 let isSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
+let splitRatio = loadSplitRatio();
 let pyodideReadyPromise = null;
 
 applyTheme(loadTheme());
 applySidebarLayout();
+applySplitLayout();
 applyView(activeView);
 render();
 syncEditorFromDraftOrActiveNote();
@@ -111,10 +116,14 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", () => {
   sidebarWidth = clampSidebarWidth(sidebarWidth);
   applySidebarLayout();
+  splitRatio = clampSplitRatio(splitRatio);
+  applySplitLayout();
 });
 sidebarToggleButton.addEventListener("click", toggleSidebar);
 sidebarResizer.addEventListener("pointerdown", startSidebarResize);
 sidebarResizer.addEventListener("keydown", handleSidebarResizeKeydown);
+splitResizer.addEventListener("pointerdown", startSplitResize);
+splitResizer.addEventListener("keydown", handleSplitResizeKeydown);
 searchInput.addEventListener("input", renderHistory);
 statusFilter.addEventListener("change", renderHistory);
 tagFilter.addEventListener("change", renderHistory);
@@ -448,6 +457,63 @@ function handleSidebarResizeKeydown(event) {
 function clampSidebarWidth(width) {
   const maxWidth = Math.min(440, Math.max(260, window.innerWidth * 0.45));
   return Math.round(Math.min(Math.max(width, 240), maxWidth));
+}
+
+function loadSplitRatio() {
+  const storedRatio = Number(localStorage.getItem(SPLIT_RATIO_KEY));
+  return clampSplitRatio(Number.isFinite(storedRatio) ? storedRatio : 50);
+}
+
+function applySplitLayout() {
+  const ratio = clampSplitRatio(splitRatio);
+  splitRatio = ratio;
+  workspace.style.setProperty("--editor-fr", `${ratio}fr`);
+  workspace.style.setProperty("--preview-fr", `${100 - ratio}fr`);
+  splitResizer.setAttribute("aria-valuemin", "30");
+  splitResizer.setAttribute("aria-valuemax", "75");
+  splitResizer.setAttribute("aria-valuenow", String(ratio));
+}
+
+function startSplitResize(event) {
+  if (activeView !== "split" || event.pointerType === "keyboard") return;
+  event.preventDefault();
+  splitResizer.setPointerCapture(event.pointerId);
+  document.body.classList.add("resizing-split");
+
+  const handlePointerMove = (moveEvent) => {
+    const bounds = workspace.getBoundingClientRect();
+    const nextRatio = ((moveEvent.clientX - bounds.left) / bounds.width) * 100;
+    splitRatio = clampSplitRatio(nextRatio);
+    localStorage.setItem(SPLIT_RATIO_KEY, String(splitRatio));
+    applySplitLayout();
+  };
+
+  const stopResize = () => {
+    document.body.classList.remove("resizing-split");
+    splitResizer.removeEventListener("pointermove", handlePointerMove);
+    splitResizer.removeEventListener("pointerup", stopResize);
+    splitResizer.removeEventListener("pointercancel", stopResize);
+  };
+
+  splitResizer.addEventListener("pointermove", handlePointerMove);
+  splitResizer.addEventListener("pointerup", stopResize);
+  splitResizer.addEventListener("pointercancel", stopResize);
+}
+
+function handleSplitResizeKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+  applyView("split");
+  splitRatio = clampSplitRatio(splitRatio + (event.key === "ArrowRight" ? 5 : -5));
+  localStorage.setItem(SPLIT_RATIO_KEY, String(splitRatio));
+  applySplitLayout();
+}
+
+function clampSplitRatio(value) {
+  const workspaceWidth = workspace?.clientWidth || window.innerWidth;
+  const minimumRatio = workspaceWidth < 760 ? 40 : 30;
+  const maximumRatio = workspaceWidth < 760 ? 60 : 75;
+  return Math.round(Math.min(Math.max(value, minimumRatio), maximumRatio));
 }
 
 function openChangelog() {

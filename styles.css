@@ -462,8 +462,45 @@ h1 {
 }
 
 .workspace[data-view="split"] {
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 18px;
+  grid-template-columns: minmax(0, var(--editor-fr, 50fr)) 14px minmax(0, var(--preview-fr, 50fr));
+  gap: 0;
+}
+
+.split-resizer {
+  display: none;
+}
+
+.workspace[data-view="split"] .split-resizer {
+  position: relative;
+  display: block;
+  cursor: col-resize;
+}
+
+.workspace[data-view="split"] .split-resizer::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 50%;
+  width: 2px;
+  border-radius: 999px;
+  background: var(--line);
+  content: "";
+  transform: translateX(-50%);
+}
+
+.workspace[data-view="split"] .split-resizer:hover::before,
+.workspace[data-view="split"] .split-resizer:focus-visible::before {
+  background: var(--accent);
+}
+
+.split-resizer:focus-visible {
+  outline: 3px solid rgba(22, 100, 90, 0.16);
+  outline-offset: -4px;
+}
+
+body.resizing-split {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .primary-button {
@@ -505,6 +542,8 @@ h1 {
 }
 
 .workspace[data-view="edit"] .preview-panel,
+.workspace[data-view="edit"] .split-resizer,
+.workspace[data-view="preview"] .split-resizer,
 .workspace[data-view="preview"] .note-input {
   display: none;
 }
@@ -855,6 +894,11 @@ h1 {
 
   .workspace[data-view="split"] {
     grid-template-columns: 1fr;
+    gap: 18px;
+  }
+
+  .workspace[data-view="split"] .split-resizer {
+    display: none;
   }
 
   .note-input,
