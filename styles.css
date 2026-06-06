@@ -893,12 +893,14 @@ body.resizing-split {
   }
 
   .workspace[data-view="split"] {
-    grid-template-columns: 1fr;
-    gap: 18px;
+    grid-template-columns: minmax(0, var(--editor-fr, 50fr)) 14px minmax(0, var(--preview-fr, 50fr));
+    gap: 0;
   }
 
   .workspace[data-view="split"] .split-resizer {
-    display: none;
+    position: relative;
+    display: block;
+    cursor: col-resize;
   }
 
   .note-input,
