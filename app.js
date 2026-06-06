@@ -2,7 +2,10 @@ const STORAGE_KEY = "flow-notes-history";
 const DRAFT_KEY = "flow-notes-draft";
 const THEME_KEY = "flow-notes-theme";
 const VIEW_KEY = "flow-notes-view";
+const SIDEBAR_WIDTH_KEY = "flow-notes-sidebar-width";
+const SIDEBAR_COLLAPSED_KEY = "flow-notes-sidebar-collapsed";
 
+const appShell = document.querySelector("#appShell");
 const titleInput = document.querySelector("#titleInput");
 const noteInput = document.querySelector("#noteInput");
 const saveButton = document.querySelector("#saveButton");
@@ -18,6 +21,8 @@ const changelogButton = document.querySelector("#changelogButton");
 const changelogDialog = document.querySelector("#changelogDialog");
 const closeChangelogButton = document.querySelector("#closeChangelogButton");
 const changelogList = document.querySelector("#changelogList");
+const sidebarToggleButton = document.querySelector("#sidebarToggleButton");
+const sidebarResizer = document.querySelector("#sidebarResizer");
 const searchInput = document.querySelector("#searchInput");
 const statusFilter = document.querySelector("#statusFilter");
 const tagFilter = document.querySelector("#tagFilter");
@@ -35,8 +40,17 @@ const template = document.querySelector("#historyItemTemplate");
 
 const CHANGELOG_ENTRIES = [
   {
+    date: "2026/06/06",
+    title: "布局体验优化",
+    items: [
+      "新增历史栏拖拽调整宽度，半屏写笔记时可以把左侧空间让给编辑区。",
+      "新增历史栏一键收起按钮，窄窗口下只保留一个展开入口。",
+      "系统会记住历史栏宽度和收起状态，下次打开继续沿用。",
+    ],
+  },
+  {
     date: "2026/06/05",
-    title: "今日更新",
+    title: "代码运行增强",
     items: [
       "新增更新日志入口，可以直接查看今天和近期做了什么功能。",
       "Python 代码块支持在浏览器中运行，并会自动加载 Pyodide 支持的依赖库。",
@@ -67,9 +81,12 @@ const CHANGELOG_ENTRIES = [
 let notes = loadNotes();
 let activeNoteId = notes[0]?.id ?? null;
 let activeView = localStorage.getItem(VIEW_KEY) || "edit";
+let sidebarWidth = loadSidebarWidth();
+let isSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 let pyodideReadyPromise = null;
 
 applyTheme(loadTheme());
+applySidebarLayout();
 applyView(activeView);
 render();
 syncEditorFromDraftOrActiveNote();
@@ -91,6 +108,13 @@ changelogDialog.addEventListener("click", (event) => {
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !changelogDialog.hidden) closeChangelog();
 });
+window.addEventListener("resize", () => {
+  sidebarWidth = clampSidebarWidth(sidebarWidth);
+  applySidebarLayout();
+});
+sidebarToggleButton.addEventListener("click", toggleSidebar);
+sidebarResizer.addEventListener("pointerdown", startSidebarResize);
+sidebarResizer.addEventListener("keydown", handleSidebarResizeKeydown);
 searchInput.addEventListener("input", renderHistory);
 statusFilter.addEventListener("change", renderHistory);
 tagFilter.addEventListener("change", renderHistory);
@@ -359,6 +383,71 @@ function render() {
   renderTagFilter();
   renderHistory();
   updateWordCount();
+}
+
+function loadSidebarWidth() {
+  const storedWidth = Number(localStorage.getItem(SIDEBAR_WIDTH_KEY));
+  return clampSidebarWidth(Number.isFinite(storedWidth) ? storedWidth : 340);
+}
+
+function applySidebarLayout() {
+  const width = clampSidebarWidth(sidebarWidth);
+  sidebarWidth = width;
+  appShell.style.setProperty("--sidebar-width", `${width}px`);
+  appShell.classList.toggle("sidebar-collapsed", isSidebarCollapsed);
+  sidebarToggleButton.textContent = isSidebarCollapsed ? "›" : "‹";
+  sidebarToggleButton.title = isSidebarCollapsed ? "展开历史栏" : "收起历史栏";
+  sidebarToggleButton.setAttribute("aria-label", sidebarToggleButton.title);
+  sidebarToggleButton.setAttribute("aria-expanded", String(!isSidebarCollapsed));
+}
+
+function toggleSidebar() {
+  isSidebarCollapsed = !isSidebarCollapsed;
+  localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(isSidebarCollapsed));
+  applySidebarLayout();
+}
+
+function startSidebarResize(event) {
+  if (isSidebarCollapsed || event.pointerType === "keyboard") return;
+  event.preventDefault();
+  sidebarResizer.setPointerCapture(event.pointerId);
+  document.body.classList.add("resizing-sidebar");
+
+  const handlePointerMove = (moveEvent) => {
+    sidebarWidth = clampSidebarWidth(moveEvent.clientX);
+    localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+    applySidebarLayout();
+  };
+
+  const stopResize = () => {
+    document.body.classList.remove("resizing-sidebar");
+    sidebarResizer.removeEventListener("pointermove", handlePointerMove);
+    sidebarResizer.removeEventListener("pointerup", stopResize);
+    sidebarResizer.removeEventListener("pointercancel", stopResize);
+  };
+
+  sidebarResizer.addEventListener("pointermove", handlePointerMove);
+  sidebarResizer.addEventListener("pointerup", stopResize);
+  sidebarResizer.addEventListener("pointercancel", stopResize);
+}
+
+function handleSidebarResizeKeydown(event) {
+  if (!["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+  event.preventDefault();
+
+  if (isSidebarCollapsed) {
+    isSidebarCollapsed = false;
+    localStorage.setItem(SIDEBAR_COLLAPSED_KEY, "false");
+  }
+
+  sidebarWidth = clampSidebarWidth(sidebarWidth + (event.key === "ArrowRight" ? 24 : -24));
+  localStorage.setItem(SIDEBAR_WIDTH_KEY, String(sidebarWidth));
+  applySidebarLayout();
+}
+
+function clampSidebarWidth(width) {
+  const maxWidth = Math.min(440, Math.max(260, window.innerWidth * 0.45));
+  return Math.round(Math.min(Math.max(width, 240), maxWidth));
 }
 
 function openChangelog() {
