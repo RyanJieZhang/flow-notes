@@ -48,6 +48,7 @@ const CHANGELOG_ENTRIES = [
       "新增历史栏拖拽调整宽度，半屏写笔记时可以把左侧空间让给编辑区。",
       "新增历史栏一键收起按钮，窄窗口下只保留一个展开入口。",
       "新增分屏比例拖拽，编辑区和预览区的宽度可以按当前任务自由调整。",
+      "新增编辑区到预览区的同步定位，选中左侧内容时右侧会滚动到对应结果。",
       "系统会记住历史栏宽度和收起状态，下次打开继续沿用。",
     ],
   },
@@ -88,6 +89,7 @@ let sidebarWidth = loadSidebarWidth();
 let isSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 let splitRatio = loadSplitRatio();
 let pyodideReadyPromise = null;
+let previewSyncTimer = null;
 
 applyTheme(loadTheme());
 applySidebarLayout();
@@ -132,8 +134,12 @@ noteInput.addEventListener("input", () => {
   updatePreview();
   markDraft();
   saveDraft();
+  schedulePreviewSync();
 });
 noteInput.addEventListener("keydown", handleEditorKeydown);
+noteInput.addEventListener("click", syncPreviewToEditorSelection);
+noteInput.addEventListener("keyup", syncPreviewToEditorSelection);
+noteInput.addEventListener("select", syncPreviewToEditorSelection);
 titleInput.addEventListener("input", () => {
   updatePreview();
   markDraft();
@@ -643,7 +649,43 @@ function updatePreview() {
   }
 
   const source = title ? `# ${title}\n\n${body}` : body;
-  previewPanel.innerHTML = renderMarkdown(source);
+  previewPanel.innerHTML = renderMarkdown(source, { sourceLineOffset: title ? -2 : 0 });
+  syncPreviewToEditorSelection();
+}
+
+function schedulePreviewSync() {
+  window.clearTimeout(previewSyncTimer);
+  previewSyncTimer = window.setTimeout(syncPreviewToEditorSelection, 80);
+}
+
+function syncPreviewToEditorSelection() {
+  if (activeView !== "split" && activeView !== "preview") return;
+
+  const selectedLine = getCurrentEditorLine();
+  const target = findPreviewBlockForLine(selectedLine);
+  if (!target) return;
+
+  previewPanel.querySelector(".source-highlight")?.classList.remove("source-highlight");
+  target.classList.add("source-highlight");
+  target.scrollIntoView({ block: "center", behavior: "smooth" });
+  window.setTimeout(() => target.classList.remove("source-highlight"), 900);
+}
+
+function getCurrentEditorLine() {
+  const selectionStart = Math.min(noteInput.selectionStart, noteInput.selectionEnd);
+  return noteInput.value.slice(0, selectionStart).split(/\r?\n/).length;
+}
+
+function findPreviewBlockForLine(lineNumber) {
+  const blocks = [...previewPanel.querySelectorAll("[data-source-line]")];
+  if (!blocks.length) return null;
+
+  return blocks.reduce((bestMatch, block) => {
+    const blockLine = Number(block.dataset.sourceLine);
+    const bestLine = Number(bestMatch.dataset.sourceLine);
+    if (blockLine <= lineNumber && blockLine >= bestLine) return block;
+    return bestMatch;
+  }, blocks[0]);
 }
 
 function insertPythonCodeBlock() {
@@ -736,6 +778,7 @@ function updateEditorState() {
   updatePreview();
   markDraft();
   saveDraft();
+  schedulePreviewSync();
 }
 
 function handlePreviewAction(event) {
@@ -1003,14 +1046,17 @@ function toggleTheme() {
 
 function renderMarkdown(markdown, options = {}) {
   const interactiveCode = options.interactiveCode !== false;
+  const sourceLineOffset = options.sourceLineOffset || 0;
   const lines = markdown.split(/\r?\n/);
   const blocks = [];
   let listItems = [];
+  let listStartLine = 1;
   let index = 0;
 
   while (index < lines.length) {
     const line = lines[index];
     const trimmed = line.trim();
+    const sourceLine = Math.max(1, index + 1 + sourceLineOffset);
 
     if (!trimmed) {
       flushList();
@@ -1021,7 +1067,6 @@ function renderMarkdown(markdown, options = {}) {
     const fenceMatch = trimmed.match(/^```([\w-]*)\s*$/);
     if (fenceMatch) {
       flushList();
-      const language = fenceMatch[1] ? ` language-${escapeAttribute(fenceMatch[1])}` : "";
       const codeLines = [];
       index += 1;
 
@@ -1030,7 +1075,7 @@ function renderMarkdown(markdown, options = {}) {
         index += 1;
       }
 
-      blocks.push(renderCodeBlock(codeLines.join("\n"), fenceMatch[1], interactiveCode));
+      blocks.push(renderCodeBlock(codeLines.join("\n"), fenceMatch[1], interactiveCode, sourceLine));
       index += 1;
       continue;
     }
@@ -1038,13 +1083,14 @@ function renderMarkdown(markdown, options = {}) {
     if (isTableStart(lines, index)) {
       flushList();
       const table = parseTable(lines, index);
-      blocks.push(renderTable(table.headers, table.rows));
+      blocks.push(renderTable(table.headers, table.rows, sourceLine));
       index = table.nextIndex;
       continue;
     }
 
     const listMatch = trimmed.match(/^[-*]\s+(.+)$/);
     if (listMatch) {
+      if (!listItems.length) listStartLine = sourceLine;
       listItems.push(`<li>${renderInline(listMatch[1])}</li>`);
       index += 1;
       continue;
@@ -1055,12 +1101,12 @@ function renderMarkdown(markdown, options = {}) {
     const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
     if (heading) {
       const level = heading[1].length;
-      blocks.push(`<h${level}>${renderInline(heading[2])}</h${level}>`);
+      blocks.push(`<h${level} data-source-line="${sourceLine}">${renderInline(heading[2])}</h${level}>`);
       index += 1;
       continue;
     }
 
-    blocks.push(`<p>${renderInline(trimmed)}</p>`);
+    blocks.push(`<p data-source-line="${sourceLine}">${renderInline(trimmed)}</p>`);
     index += 1;
   }
 
@@ -1069,12 +1115,12 @@ function renderMarkdown(markdown, options = {}) {
 
   function flushList() {
     if (!listItems.length) return;
-    blocks.push(`<ul>${listItems.join("")}</ul>`);
+    blocks.push(`<ul data-source-line="${listStartLine}">${listItems.join("")}</ul>`);
     listItems = [];
   }
 }
 
-function renderCodeBlock(code, rawLanguage, interactiveCode) {
+function renderCodeBlock(code, rawLanguage, interactiveCode, sourceLine = 1) {
   const language = normalizeLanguage(rawLanguage);
   const languageClass = language ? ` language-${escapeAttribute(language)}` : "";
   const encodedCode = encodeURIComponent(code);
@@ -1082,7 +1128,7 @@ function renderCodeBlock(code, rawLanguage, interactiveCode) {
   const action = interactiveCode ? getCodeAction(language) : "";
   const output = interactiveCode ? '<div class="code-output" aria-live="polite"></div>' : "";
 
-  return `<div class="code-block" data-language="${escapeAttribute(language)}" data-code="${encodedCode}">
+  return `<div class="code-block" data-source-line="${sourceLine}" data-language="${escapeAttribute(language)}" data-code="${encodedCode}">
     <div class="code-toolbar">
       <span>${escapeHtml(label)}</span>
       <div class="code-actions">
@@ -1373,14 +1419,14 @@ function splitTableRow(line) {
     .map((cell) => cell.trim());
 }
 
-function renderTable(headers, rows) {
+function renderTable(headers, rows, sourceLine = 1) {
   const head = headers.map((header) => `<th>${renderInline(header)}</th>`).join("");
   const body = rows.map((row) => {
     const cells = headers.map((_, cellIndex) => `<td>${renderInline(row[cellIndex] || "")}</td>`).join("");
     return `<tr>${cells}</tr>`;
   }).join("");
 
-  return `<div class="table-wrap"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
+  return `<div class="table-wrap" data-source-line="${sourceLine}"><table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 function formatDate(date) {

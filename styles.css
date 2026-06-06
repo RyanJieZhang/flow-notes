@@ -719,6 +719,12 @@ body.resizing-split {
   font-weight: 700;
 }
 
+.preview-panel .source-highlight {
+  outline: 3px solid rgba(22, 100, 90, 0.22);
+  outline-offset: 4px;
+  transition: outline-color 0.2s ease;
+}
+
 .preview-empty {
   color: var(--muted);
 }
