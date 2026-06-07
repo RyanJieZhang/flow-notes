@@ -22,6 +22,10 @@ const changelogButton = document.querySelector("#changelogButton");
 const changelogDialog = document.querySelector("#changelogDialog");
 const closeChangelogButton = document.querySelector("#closeChangelogButton");
 const changelogList = document.querySelector("#changelogList");
+const versionsButton = document.querySelector("#versionsButton");
+const versionsDialog = document.querySelector("#versionsDialog");
+const closeVersionsButton = document.querySelector("#closeVersionsButton");
+const versionList = document.querySelector("#versionList");
 const sidebarToggleButton = document.querySelector("#sidebarToggleButton");
 const sidebarResizer = document.querySelector("#sidebarResizer");
 const searchInput = document.querySelector("#searchInput");
@@ -38,9 +42,19 @@ const workspace = document.querySelector("#workspace");
 const splitResizer = document.querySelector("#splitResizer");
 const previewPanel = document.querySelector("#previewPanel");
 const viewButtons = document.querySelectorAll(".tab-button");
+const formatToolbar = document.querySelector(".format-toolbar");
 const template = document.querySelector("#historyItemTemplate");
 
 const CHANGELOG_ENTRIES = [
+  {
+    date: "2026/06/07",
+    title: "专业编辑增强",
+    items: [
+      "新增代码块内逐行定位，左侧选中代码行时右侧对应行会高亮。",
+      "新增笔记版本历史，保存旧内容后可以打开版本面板恢复。",
+      "新增 Markdown 快捷工具栏，可以快速插入标题、加粗、列表、表格、图片和代码块。",
+    ],
+  },
   {
     date: "2026/06/06",
     title: "布局体验优化",
@@ -112,8 +126,14 @@ closeChangelogButton.addEventListener("click", closeChangelog);
 changelogDialog.addEventListener("click", (event) => {
   if (event.target === changelogDialog) closeChangelog();
 });
+versionsButton.addEventListener("click", openVersions);
+closeVersionsButton.addEventListener("click", closeVersions);
+versionsDialog.addEventListener("click", (event) => {
+  if (event.target === versionsDialog) closeVersions();
+});
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape" && !changelogDialog.hidden) closeChangelog();
+  if (event.key === "Escape" && !versionsDialog.hidden) closeVersions();
 });
 window.addEventListener("resize", () => {
   sidebarWidth = clampSidebarWidth(sidebarWidth);
@@ -155,6 +175,8 @@ viewButtons.forEach((button) => {
   button.addEventListener("click", () => applyView(button.dataset.view));
 });
 previewPanel.addEventListener("click", handlePreviewAction);
+formatToolbar.addEventListener("click", handleFormatAction);
+versionList.addEventListener("click", handleVersionAction);
 
 function loadNotes() {
   try {
@@ -208,6 +230,7 @@ function saveCurrentNote() {
   const activeNote = notes.find((note) => note.id === activeNoteId);
 
   if (activeNote) {
+    addVersionSnapshot(activeNote);
     activeNote.title = title;
     activeNote.body = body;
     activeNote.tags = tags;
@@ -222,6 +245,7 @@ function saveCurrentNote() {
       tags,
       pinned: false,
       archived: false,
+      versions: [],
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
     };
@@ -273,6 +297,25 @@ function deleteNote(id) {
   persistNotes();
   render();
   saveStatus.textContent = "历史记录已删除";
+}
+
+function addVersionSnapshot(note) {
+  const changed =
+    note.title !== (titleInput.value.trim() || "未命名笔记") ||
+    note.body !== noteInput.value.trim() ||
+    (note.tags || []).join("|") !== parseTags(tagInput.value).join("|");
+
+  if (!changed) return;
+
+  const snapshot = {
+    id: createNoteId(),
+    title: note.title,
+    body: note.body,
+    tags: note.tags || [],
+    savedAt: note.updatedAt || note.createdAt || new Date().toISOString(),
+  };
+
+  note.versions = [snapshot, ...(note.versions || [])].slice(0, 20);
 }
 
 function togglePinned() {
@@ -533,6 +576,67 @@ function closeChangelog() {
   changelogButton.focus();
 }
 
+function openVersions() {
+  renderVersions();
+  versionsDialog.hidden = false;
+  closeVersionsButton.focus();
+}
+
+function closeVersions() {
+  versionsDialog.hidden = true;
+  versionsButton.focus();
+}
+
+function renderVersions() {
+  const note = notes.find((item) => item.id === activeNoteId);
+  versionList.innerHTML = "";
+
+  if (!note) {
+    versionList.innerHTML = '<p class="empty-state">先保存笔记，再查看版本历史</p>';
+    return;
+  }
+
+  const versions = note.versions || [];
+  if (!versions.length) {
+    versionList.innerHTML = '<p class="empty-state">还没有旧版本。再次保存修改后，这里会出现可恢复的版本。</p>';
+    return;
+  }
+
+  versions.forEach((version) => {
+    const item = document.createElement("article");
+    item.className = "version-item";
+
+    const bodyPreview = version.body ? version.body.slice(0, 140) : "空白版本";
+    item.innerHTML = `
+      <div>
+        <h3>${escapeHtml(version.title || "未命名笔记")}</h3>
+        <time>${formatDate(new Date(version.savedAt))}</time>
+        <p>${escapeHtml(bodyPreview)}${version.body?.length > 140 ? "..." : ""}</p>
+      </div>
+      <button class="ghost-button" type="button" data-version-id="${escapeAttribute(version.id)}">恢复</button>
+    `;
+    versionList.append(item);
+  });
+}
+
+function handleVersionAction(event) {
+  const restoreButton = event.target.closest("[data-version-id]");
+  if (!restoreButton) return;
+
+  const note = notes.find((item) => item.id === activeNoteId);
+  const version = note?.versions?.find((item) => item.id === restoreButton.dataset.versionId);
+  if (!version) return;
+
+  titleInput.value = version.title || "";
+  noteInput.value = version.body || "";
+  tagInput.value = (version.tags || []).join(", ");
+  updateEditorState();
+  updateNoteActions();
+  saveStatus.textContent = "已恢复旧版本，点击保存后生效";
+  closeVersions();
+  noteInput.focus();
+}
+
 function renderChangelog() {
   changelogList.innerHTML = "";
 
@@ -666,9 +770,16 @@ function syncPreviewToEditorSelection() {
   if (!target) return;
 
   previewPanel.querySelector(".source-highlight")?.classList.remove("source-highlight");
+  previewPanel.querySelector(".source-line-highlight")?.classList.remove("source-line-highlight");
   target.classList.add("source-highlight");
+  if (target.classList.contains("code-line")) {
+    target.classList.add("source-line-highlight");
+  }
   target.scrollIntoView({ block: "center", behavior: "smooth" });
-  window.setTimeout(() => target.classList.remove("source-highlight"), 900);
+  window.setTimeout(() => {
+    target.classList.remove("source-highlight");
+    target.classList.remove("source-line-highlight");
+  }, 900);
 }
 
 function getCurrentEditorLine() {
@@ -708,6 +819,75 @@ function insertPythonCodeBlock() {
   updatePreview();
   markDraft();
   saveDraft();
+}
+
+function handleFormatAction(event) {
+  const button = event.target.closest("[data-format-action]");
+  if (!button) return;
+
+  const action = button.dataset.formatAction;
+  if (action === "code") {
+    insertPythonCodeBlock();
+    return;
+  }
+
+  applyView(activeView === "preview" ? "edit" : activeView);
+  noteInput.focus();
+
+  const selection = getSelectionText();
+  const actions = {
+    h1: () => insertLinePrefix("# "),
+    h2: () => insertLinePrefix("## "),
+    bold: () => wrapSelection("**", "**", "加粗文字"),
+    italic: () => wrapSelection("*", "*", "斜体文字"),
+    list: () => insertBlock(selection || "- 列表项\n- 列表项"),
+    table: () => insertBlock("| 名称 | 内容 |\n| --- | --- |\n| 示例 | 说明 |"),
+    image: () => insertBlock("![图片描述](https://example.com/image.png)"),
+  };
+
+  actions[action]?.();
+  updateEditorState();
+}
+
+function getSelectionText() {
+  return noteInput.value.slice(noteInput.selectionStart, noteInput.selectionEnd);
+}
+
+function insertLinePrefix(prefix) {
+  const start = noteInput.selectionStart;
+  const end = noteInput.selectionEnd;
+  const lineStart = noteInput.value.lastIndexOf("\n", start - 1) + 1;
+  const lineEnd = noteInput.value.indexOf("\n", end);
+  const targetEnd = start === end ? (lineEnd === -1 ? noteInput.value.length : lineEnd) : end;
+  const selectedText = noteInput.value.slice(lineStart, targetEnd);
+  const prefixed = selectedText.split("\n").map((line) => {
+    if (!line.trim()) return line;
+    return line.startsWith(prefix) ? line : `${prefix}${line}`;
+  }).join("\n");
+
+  noteInput.setSelectionRange(lineStart, targetEnd);
+  replaceSelection(prefixed || prefix);
+}
+
+function wrapSelection(before, after, placeholder) {
+  const selectedText = getSelectionText() || placeholder;
+  const start = noteInput.selectionStart;
+  replaceSelection(`${before}${selectedText}${after}`);
+  const selectionStart = start + before.length;
+  noteInput.setSelectionRange(selectionStart, selectionStart + selectedText.length);
+}
+
+function insertBlock(value) {
+  const start = noteInput.selectionStart;
+  const end = noteInput.selectionEnd;
+  const before = noteInput.value.slice(0, start);
+  const after = noteInput.value.slice(end);
+  const needsLeadingBreak = before && !before.endsWith("\n") ? "\n\n" : "";
+  const needsTrailingBreak = after && !after.startsWith("\n") ? "\n\n" : "";
+  const insertText = `${needsLeadingBreak}${value}${needsTrailingBreak}`;
+
+  noteInput.value = `${before}${insertText}${after}`;
+  noteInput.setSelectionRange(start + needsLeadingBreak.length, start + needsLeadingBreak.length + value.length);
 }
 
 function handleEditorKeydown(event) {
@@ -822,6 +1002,7 @@ function buildExportNote(title, body) {
     tags: activeNote?.tags || parseTags(tagInput.value),
     pinned: Boolean(activeNote?.pinned),
     archived: Boolean(activeNote?.archived),
+    versions: activeNote?.versions || [],
     createdAt: activeNote?.createdAt || null,
     updatedAt: activeNote?.updatedAt || new Date().toISOString(),
   };
@@ -889,9 +1070,22 @@ function normalizeNote(note) {
     tags: Array.isArray(note?.tags) ? note.tags.map(String).map((tag) => tag.trim()).filter(Boolean) : [],
     pinned: Boolean(note?.pinned),
     archived: Boolean(note?.archived),
+    versions: normalizeVersions(note?.versions),
     createdAt: note?.createdAt || now,
     updatedAt: note?.updatedAt || note?.createdAt || now,
   };
+}
+
+function normalizeVersions(versions) {
+  if (!Array.isArray(versions)) return [];
+
+  return versions.slice(0, 20).map((version) => ({
+    id: version?.id || createNoteId(),
+    title: String(version?.title || "未命名笔记"),
+    body: String(version?.body || ""),
+    tags: Array.isArray(version?.tags) ? version.tags.map(String).map((tag) => tag.trim()).filter(Boolean) : [],
+    savedAt: version?.savedAt || version?.updatedAt || version?.createdAt || new Date().toISOString(),
+  }));
 }
 
 function parseTags(value) {
@@ -1127,6 +1321,9 @@ function renderCodeBlock(code, rawLanguage, interactiveCode, sourceLine = 1) {
   const label = language || "code";
   const action = interactiveCode ? getCodeAction(language) : "";
   const output = interactiveCode ? '<div class="code-output" aria-live="polite"></div>' : "";
+  const codeHtml = code.split("\n").map((line, index) => {
+    return `<span class="code-line" data-source-line="${sourceLine + index + 1}">${escapeHtml(line) || " "}</span>`;
+  }).join("");
 
   return `<div class="code-block" data-source-line="${sourceLine}" data-language="${escapeAttribute(language)}" data-code="${encodedCode}">
     <div class="code-toolbar">
@@ -1136,7 +1333,7 @@ function renderCodeBlock(code, rawLanguage, interactiveCode, sourceLine = 1) {
         ${action}
       </div>
     </div>
-    <pre><code class="${languageClass.trim()}">${escapeHtml(code)}</code></pre>
+    <pre><code class="${languageClass.trim()}">${codeHtml}</code></pre>
     ${output}
   </div>`;
 }

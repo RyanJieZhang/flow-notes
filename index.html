@@ -93,9 +93,21 @@
           <input id="tagInput" type="text" placeholder="学习, 工作, 灵感">
         </label>
         <div class="note-actions">
+          <button id="versionsButton" class="ghost-button" type="button">版本</button>
           <button id="pinButton" class="ghost-button" type="button">置顶</button>
           <button id="archiveButton" class="ghost-button" type="button">归档</button>
         </div>
+      </div>
+
+      <div class="format-toolbar" aria-label="Markdown 快捷工具栏">
+        <button type="button" data-format-action="h1">H1</button>
+        <button type="button" data-format-action="h2">H2</button>
+        <button type="button" data-format-action="bold">B</button>
+        <button type="button" data-format-action="italic">I</button>
+        <button type="button" data-format-action="list">列表</button>
+        <button type="button" data-format-action="table">表格</button>
+        <button type="button" data-format-action="image">图片</button>
+        <button type="button" data-format-action="code">代码</button>
       </div>
 
       <div class="workspace" id="workspace" data-view="edit">
@@ -121,6 +133,19 @@
         <button class="ghost-button" id="closeChangelogButton" type="button">关闭</button>
       </div>
       <div class="changelog-list" id="changelogList"></div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="versionsDialog" hidden>
+    <section class="changelog-modal" role="dialog" aria-modal="true" aria-labelledby="versionsTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Snapshots</p>
+          <h2 id="versionsTitle">版本历史</h2>
+        </div>
+        <button class="ghost-button" id="closeVersionsButton" type="button">关闭</button>
+      </div>
+      <div class="version-list" id="versionList"></div>
     </section>
   </div>
 

@@ -449,6 +449,33 @@ h1 {
   gap: 10px;
 }
 
+.format-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.format-toolbar button {
+  min-width: 40px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+  color: var(--accent-strong);
+  padding: 7px 10px;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.format-toolbar button:hover,
+.format-toolbar button:focus-visible {
+  border-color: var(--accent);
+  outline: none;
+}
+
 .ghost-button.active {
   border-color: var(--accent);
   background: var(--accent-soft);
@@ -653,6 +680,17 @@ body.resizing-split {
   line-height: 1.65;
 }
 
+.preview-panel .code-line {
+  display: block;
+  min-height: 1.65em;
+  padding: 0 4px;
+  border-radius: 4px;
+}
+
+.preview-panel .code-line.source-line-highlight {
+  background: rgba(22, 100, 90, 0.16);
+}
+
 .preview-panel .code-output {
   min-height: 38px;
   padding: 12px;
@@ -723,6 +761,10 @@ body.resizing-split {
   outline: 3px solid rgba(22, 100, 90, 0.22);
   outline-offset: 4px;
   transition: outline-color 0.2s ease;
+}
+
+.preview-panel .code-line.source-highlight {
+  outline-offset: 1px;
 }
 
 .preview-empty {
@@ -824,6 +866,39 @@ body.resizing-split {
   margin-top: 6px;
 }
 
+.version-list {
+  display: grid;
+  gap: 12px;
+}
+
+.version-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.version-item h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.version-item time {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.version-item p {
+  margin: 8px 0 0;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
 @media (max-width: 780px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -874,6 +949,10 @@ body.resizing-split {
     flex: 1;
   }
 
+  .note-actions {
+    flex-wrap: wrap;
+  }
+
   .toolbar-actions > button {
     flex: 1;
   }
@@ -913,6 +992,10 @@ body.resizing-split {
   .preview-panel {
     min-height: 48vh;
     font-size: 16px;
+  }
+
+  .version-item {
+    grid-template-columns: 1fr;
   }
 
   .modal-backdrop {
