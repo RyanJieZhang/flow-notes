@@ -23,7 +23,7 @@
 
       <label class="search-box">
         <span>搜索</span>
-        <input id="searchInput" type="search" placeholder="标题、正文或标签">
+        <input id="searchInput" type="search" placeholder="关键词，或 tag:学习 title:Python">
       </label>
 
       <div class="filter-row" aria-label="笔记过滤">
@@ -43,6 +43,8 @@
           </select>
         </label>
       </div>
+
+      <div class="stats-panel" id="statsPanel" aria-label="笔记统计"></div>
 
       <div class="history-meta">
         <span id="noteCount">0 条记录</span>
@@ -79,6 +81,8 @@
               <option value="pdf">PDF</option>
               <option value="json">JSON</option>
               <option value="all-json">全部 JSON</option>
+              <option value="all-markdown">全部 Markdown</option>
+              <option value="all-html">全部 HTML</option>
             </select>
           </label>
           <label class="export-select code-language-select">
@@ -115,6 +119,7 @@
         <button type="button" data-format-action="h2">H2</button>
         <button type="button" data-format-action="bold">B</button>
         <button type="button" data-format-action="italic">I</button>
+        <button type="button" data-format-action="link">链接</button>
         <button type="button" data-format-action="list">列表</button>
         <button type="button" data-format-action="table">表格</button>
         <button type="button" data-format-action="image">图片</button>

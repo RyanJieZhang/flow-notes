@@ -245,6 +245,37 @@ h1 {
   padding: 11px 12px;
 }
 
+.stats-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.stats-panel div {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.stats-panel strong,
+.stats-panel span {
+  display: block;
+}
+
+.stats-panel strong {
+  color: var(--accent-strong);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.stats-panel span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
 .search-box input:focus,
 .filter-row select:focus,
 .tag-editor input:focus,
@@ -1133,6 +1164,48 @@ body.resizing-split {
   margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.version-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.version-diff {
+  margin-top: 12px;
+  overflow: auto;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.version-diff[hidden] {
+  display: none;
+}
+
+.diff-summary {
+  display: grid;
+  gap: 4px;
+}
+
+.diff-line {
+  padding: 5px 7px;
+  border-radius: 6px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.diff-line.added {
+  background: rgba(22, 100, 90, 0.12);
+  color: var(--accent-strong);
+}
+
+.diff-line.removed {
+  background: rgba(178, 90, 57, 0.12);
+  color: var(--warning);
 }
 
 .import-preview-list {

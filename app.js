@@ -48,6 +48,7 @@ const sidebarResizer = document.querySelector("#sidebarResizer");
 const searchInput = document.querySelector("#searchInput");
 const statusFilter = document.querySelector("#statusFilter");
 const tagFilter = document.querySelector("#tagFilter");
+const statsPanel = document.querySelector("#statsPanel");
 const historyList = document.querySelector("#historyList");
 const noteCount = document.querySelector("#noteCount");
 const saveStatus = document.querySelector("#saveStatus");
@@ -75,6 +76,7 @@ const CHANGELOG_ENTRIES = [
     items: [
       "新增自动备份提醒，每保存 20 次或距离上次备份 7 天会提示导出全部 JSON。",
       "导入 JSON 备份前新增确认面板，可选择覆盖当前、合并导入或仅预览。",
+      "新增快捷键、统计面板、全量 Markdown/HTML 导出、搜索语法、图片压缩提示和版本差异预览。",
       "新增右侧笔记目录，会根据 #、##、### 标题自动生成并支持点击跳转。",
       "新增本地图片拖拽插入，拖到编辑区会自动转成可预览的 Markdown 图片。",
       "新增历史搜索高亮，标题、正文摘要和标签中的命中词会直接标出。",
@@ -187,6 +189,7 @@ importDialog.addEventListener("click", (event) => {
   if (event.target === importDialog) closeImportDialog();
 });
 document.addEventListener("keydown", (event) => {
+  if (handleGlobalShortcuts(event)) return;
   if (event.key !== "Escape") return;
   if (!changelogDialog.hidden) {
     closeChangelog();
@@ -519,6 +522,43 @@ function downloadExportFile(exportFile) {
   }
 }
 
+function handleGlobalShortcuts(event) {
+  const modifier = event.ctrlKey || event.metaKey;
+  if (!modifier || event.altKey) return false;
+
+  const key = event.key.toLowerCase();
+  const actions = {
+    s: () => saveCurrentNote(),
+    b: () => applyShortcutFormat("bold"),
+    i: () => applyShortcutFormat("italic"),
+    k: () => applyShortcutFormat("link"),
+    f: () => {
+      searchInput.focus();
+      searchInput.select();
+    },
+  };
+
+  if (!actions[key]) return false;
+  event.preventDefault();
+  actions[key]();
+  return true;
+}
+
+function applyShortcutFormat(action) {
+  applyView(activeView === "preview" ? "edit" : activeView);
+  noteInput.focus();
+
+  if (action === "bold") {
+    wrapSelection("**", "**", "加粗文字");
+  } else if (action === "italic") {
+    wrapSelection("*", "*", "斜体文字");
+  } else if (action === "link") {
+    insertLink();
+  }
+
+  updateEditorState();
+}
+
 function clearHistory() {
   if (!notes.length) return;
   const confirmed = window.confirm("确定清空所有历史记录吗？这个操作不能撤销。");
@@ -534,7 +574,25 @@ function clearHistory() {
 function render() {
   renderTagFilter();
   renderHistory();
+  renderStats();
   updateWordCount();
+}
+
+function renderStats() {
+  const now = Date.now();
+  const recentCount = notes.filter((note) => {
+    const updatedAt = new Date(note.updatedAt || note.createdAt).getTime();
+    return Number.isFinite(updatedAt) && now - updatedAt <= 7 * ONE_DAY_MS;
+  }).length;
+  const archivedCount = notes.filter((note) => note.archived).length;
+  const tagCount = new Set(notes.flatMap((note) => normalizeNote(note).tags)).size;
+
+  statsPanel.innerHTML = `
+    <div><strong>${notes.length}</strong><span>总笔记</span></div>
+    <div><strong>${archivedCount}</strong><span>归档</span></div>
+    <div><strong>${tagCount}</strong><span>标签</span></div>
+    <div><strong>${recentCount}</strong><span>7天更新</span></div>
+  `;
 }
 
 function loadSidebarWidth() {
@@ -706,8 +764,12 @@ function renderVersions() {
         <h3>${escapeHtml(version.title || "未命名笔记")}</h3>
         <time>${formatDate(new Date(version.savedAt))}</time>
         <p>${escapeHtml(bodyPreview)}${version.body?.length > 140 ? "..." : ""}</p>
+        <div class="version-diff" data-version-diff="${escapeAttribute(version.id)}" hidden></div>
       </div>
-      <button class="ghost-button" type="button" data-version-id="${escapeAttribute(version.id)}">恢复</button>
+      <div class="version-actions">
+        <button class="ghost-button" type="button" data-version-action="compare" data-version-id="${escapeAttribute(version.id)}">对比</button>
+        <button class="ghost-button" type="button" data-version-action="restore" data-version-id="${escapeAttribute(version.id)}">恢复</button>
+      </div>
     `;
     versionList.append(item);
   });
@@ -721,6 +783,11 @@ function handleVersionAction(event) {
   const version = note?.versions?.find((item) => item.id === restoreButton.dataset.versionId);
   if (!version) return;
 
+  if (restoreButton.dataset.versionAction === "compare") {
+    toggleVersionDiff(restoreButton, note, version);
+    return;
+  }
+
   titleInput.value = version.title || "";
   noteInput.value = version.body || "";
   tagInput.value = (version.tags || []).join(", ");
@@ -729,6 +796,42 @@ function handleVersionAction(event) {
   saveStatus.textContent = "已恢复旧版本，点击保存后生效";
   closeVersions();
   noteInput.focus();
+}
+
+function toggleVersionDiff(button, note, version) {
+  const diffPanel = [...versionList.querySelectorAll("[data-version-diff]")].find((panel) => panel.dataset.versionDiff === version.id);
+  if (!diffPanel) return;
+
+  const isHidden = diffPanel.hidden;
+  diffPanel.hidden = !isHidden;
+  button.textContent = isHidden ? "收起" : "对比";
+  if (isHidden) {
+    diffPanel.innerHTML = renderVersionDiff(note.body || "", version.body || "");
+  }
+}
+
+function renderVersionDiff(currentBody, versionBody) {
+  const currentLines = currentBody.split(/\r?\n/);
+  const versionLines = versionBody.split(/\r?\n/);
+  const maxLines = Math.max(currentLines.length, versionLines.length);
+  const rows = [];
+
+  for (let index = 0; index < maxLines; index += 1) {
+    const currentLine = currentLines[index] ?? "";
+    const versionLine = versionLines[index] ?? "";
+    if (currentLine === versionLine) continue;
+
+    if (versionLine) {
+      rows.push(`<div class="diff-line removed">- ${escapeHtml(versionLine)}</div>`);
+    }
+    if (currentLine) {
+      rows.push(`<div class="diff-line added">+ ${escapeHtml(currentLine)}</div>`);
+    }
+    if (rows.length >= 16) break;
+  }
+
+  if (!rows.length) return '<p class="modal-copy">正文没有差异，可能只是标题或标签发生过变化。</p>';
+  return `<div class="diff-summary">${rows.join("")}${maxLines > 16 ? '<p class="modal-copy">仅显示前几处差异。</p>' : ""}</div>`;
 }
 
 function renderChangelog() {
@@ -762,13 +865,12 @@ function renderChangelog() {
 }
 
 function renderHistory() {
-  const query = searchInput.value.trim().toLowerCase();
+  const search = parseSearchQuery(searchInput.value);
   const status = statusFilter.value;
   const selectedTag = tagFilter.value;
   const visibleNotes = notes.filter((note) => {
     const normalized = normalizeNote(note);
-    const haystack = `${normalized.title} ${normalized.body} ${normalized.tags.join(" ")}`.toLowerCase();
-    const matchesQuery = haystack.includes(query);
+    const matchesQuery = matchesSearch(normalized, search);
     const matchesTag = selectedTag === "all" || normalized.tags.includes(selectedTag);
     const matchesStatus =
       status === "all" ||
@@ -808,9 +910,9 @@ function renderHistory() {
     button.classList.toggle("archived", Boolean(note.archived));
     restoreButton.addEventListener("click", () => restoreNote(note.id));
     deleteButton.addEventListener("click", () => deleteNote(note.id));
-    title.innerHTML = `${note.pinned ? "★ " : ""}${highlightSearchMatches(note.title, query)}`;
-    preview.innerHTML = highlightSearchMatches(getSearchPreview(note, query), query);
-    tagline.innerHTML = note.tags?.length ? highlightSearchMatches(note.tags.map((tag) => `#${tag}`).join(" "), query) : "无标签";
+    title.innerHTML = `${note.pinned ? "★ " : ""}${highlightSearchMatches(note.title, search.highlightTerms)}`;
+    preview.innerHTML = highlightSearchMatches(getSearchPreview(note, search.highlightTerms), search.highlightTerms);
+    tagline.innerHTML = note.tags?.length ? highlightSearchMatches(note.tags.map((tag) => `#${tag}`).join(" "), search.highlightTerms) : "无标签";
     time.textContent = `${note.archived ? "归档 · " : ""}${formatDate(new Date(note.updatedAt || note.createdAt))}`;
     historyList.append(item);
   });
@@ -1079,6 +1181,7 @@ function handleFormatAction(event) {
     h2: () => insertLinePrefix("## "),
     bold: () => wrapSelection("**", "**", "加粗文字"),
     italic: () => wrapSelection("*", "*", "斜体文字"),
+    link: () => insertLink(),
     list: () => insertBlock(selection || "- 列表项\n- 列表项"),
     table: () => insertBlock("| 名称 | 内容 |\n| --- | --- |\n| 示例 | 说明 |"),
     image: () => insertBlock("![图片描述](https://example.com/image.png)"),
@@ -1149,9 +1252,13 @@ async function handleEditorDrop(event) {
   noteInput.focus();
 
   let imageBlocks;
+  let originalBytes = 0;
+  let insertedBytes = 0;
   try {
     imageBlocks = await Promise.all(files.map(async (file) => {
-      const dataUrl = await readFileAsDataUrl(file);
+      originalBytes += file.size;
+      const dataUrl = await prepareImageDataUrl(file);
+      insertedBytes += estimateDataUrlBytes(dataUrl);
       const altText = file.name.replace(/\.[^.]+$/, "").replace(/[\][()]/g, " ").trim() || "本地图片";
       return `![${altText}](${dataUrl})`;
     }));
@@ -1162,7 +1269,10 @@ async function handleEditorDrop(event) {
 
   insertBlock(imageBlocks.join("\n\n"));
   updateEditorState();
-  saveStatus.textContent = `已插入 ${files.length} 张图片`;
+  const compressed = insertedBytes < originalBytes * 0.9;
+  saveStatus.textContent = compressed
+    ? `已插入 ${files.length} 张图片，约 ${formatFileSize(originalBytes)} 压缩到 ${formatFileSize(insertedBytes)}`
+    : `已插入 ${files.length} 张图片，约 ${formatFileSize(insertedBytes)}`;
 }
 
 function hasImageTransfer(dataTransfer) {
@@ -1181,6 +1291,52 @@ function readFileAsDataUrl(file) {
     reader.addEventListener("error", () => reject(reader.error));
     reader.readAsDataURL(file);
   });
+}
+
+async function prepareImageDataUrl(file) {
+  const dataUrl = await readFileAsDataUrl(file);
+  const shouldCompress = file.size > 900 * 1024 && /^image\/(png|jpe?g|webp)$/i.test(file.type);
+  if (!shouldCompress) return dataUrl;
+
+  try {
+    return await compressImageDataUrl(dataUrl, file.type);
+  } catch {
+    return dataUrl;
+  }
+}
+
+function compressImageDataUrl(dataUrl, type) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.addEventListener("load", () => {
+      const maxSide = 1600;
+      const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+      if (scale >= 1) {
+        resolve(dataUrl);
+        return;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(image.width * scale));
+      canvas.height = Math.max(1, Math.round(image.height * scale));
+      const context = canvas.getContext("2d");
+      context.drawImage(image, 0, 0, canvas.width, canvas.height);
+      resolve(type === "image/png" ? canvas.toDataURL("image/png") : canvas.toDataURL(type, 0.84));
+    });
+    image.addEventListener("error", reject);
+    image.src = dataUrl;
+  });
+}
+
+function estimateDataUrlBytes(dataUrl) {
+  const base64 = String(dataUrl).split(",")[1] || "";
+  return Math.round((base64.length * 3) / 4);
+}
+
+function formatFileSize(bytes) {
+  if (bytes >= 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${bytes} B`;
 }
 
 function handleEditorKeydown(event) {
@@ -1560,37 +1716,116 @@ function updateNoteActions() {
   archiveButton.textContent = note?.archived ? "取消归档" : "归档";
 }
 
-function getSearchPreview(note, query) {
-  if (!note.body) return "空白笔记";
-  if (!query) return note.body;
+function parseSearchQuery(value) {
+  const tokens = String(value || "").trim().match(/"[^"]+"|\S+/g) || [];
+  const search = {
+    text: [],
+    title: [],
+    body: [],
+    tag: [],
+    highlightTerms: [],
+  };
 
-  const index = note.body.toLowerCase().indexOf(query);
+  tokens.forEach((token) => {
+    const cleanToken = token.replace(/^"|"$/g, "");
+    const fieldMatch = cleanToken.match(/^(tag|title|body):(.+)$/i);
+    if (fieldMatch) {
+      const field = fieldMatch[1].toLowerCase();
+      const term = fieldMatch[2].trim().toLowerCase();
+      if (term) {
+        search[field].push(term);
+        search.highlightTerms.push(term);
+      }
+      return;
+    }
+
+    const term = cleanToken.trim().toLowerCase();
+    if (term) {
+      search.text.push(term);
+      search.highlightTerms.push(term);
+    }
+  });
+
+  search.highlightTerms = [...new Set(search.highlightTerms)];
+  return search;
+}
+
+function matchesSearch(note, search) {
+  const title = note.title.toLowerCase();
+  const body = note.body.toLowerCase();
+  const tags = note.tags.map((tag) => tag.toLowerCase());
+  const haystack = `${title} ${body} ${tags.join(" ")}`;
+
+  return (
+    search.text.every((term) => haystack.includes(term)) &&
+    search.title.every((term) => title.includes(term)) &&
+    search.body.every((term) => body.includes(term)) &&
+    search.tag.every((term) => tags.some((tag) => tag.includes(term)))
+  );
+}
+
+function getSearchPreview(note, terms) {
+  if (!note.body) return "空白笔记";
+  const searchTerms = Array.isArray(terms) ? terms.filter(Boolean) : [];
+  if (!searchTerms.length) return note.body;
+
+  const lowerBody = note.body.toLowerCase();
+  const matches = searchTerms.map((term) => lowerBody.indexOf(term)).filter((index) => index >= 0);
+  const index = matches.length ? Math.min(...matches) : -1;
   if (index < 0) return note.body;
 
+  const matchedTerm = searchTerms.find((term) => lowerBody.indexOf(term) === index) || searchTerms[0];
   const start = Math.max(0, index - 24);
-  const end = Math.min(note.body.length, index + query.length + 48);
+  const end = Math.min(note.body.length, index + matchedTerm.length + 48);
   return `${start > 0 ? "..." : ""}${note.body.slice(start, end)}${end < note.body.length ? "..." : ""}`;
 }
 
-function highlightSearchMatches(value, query) {
+function highlightSearchMatches(value, terms) {
   const text = String(value || "");
-  const needle = String(query || "").trim();
-  if (!needle) return escapeHtml(text);
+  const needles = (Array.isArray(terms) ? terms : [terms]).map((term) => String(term || "").trim()).filter(Boolean);
+  if (!needles.length) return escapeHtml(text);
 
   const lowerText = text.toLowerCase();
-  const lowerNeedle = needle.toLowerCase();
-  let cursor = 0;
-  let matchIndex = lowerText.indexOf(lowerNeedle);
-  let output = "";
+  const ranges = [];
 
-  while (matchIndex >= 0) {
-    output += escapeHtml(text.slice(cursor, matchIndex));
-    output += `<mark class="search-highlight">${escapeHtml(text.slice(matchIndex, matchIndex + needle.length))}</mark>`;
-    cursor = matchIndex + needle.length;
-    matchIndex = lowerText.indexOf(lowerNeedle, cursor);
-  }
+  needles.forEach((needle) => {
+    const lowerNeedle = needle.toLowerCase();
+    let matchIndex = lowerText.indexOf(lowerNeedle);
+    while (matchIndex >= 0) {
+      ranges.push([matchIndex, matchIndex + needle.length]);
+      matchIndex = lowerText.indexOf(lowerNeedle, matchIndex + needle.length);
+    }
+  });
+
+  if (!ranges.length) return escapeHtml(text);
+
+  const mergedRanges = ranges.sort((first, second) => first[0] - second[0]).reduce((merged, range) => {
+    const previous = merged[merged.length - 1];
+    if (previous && range[0] <= previous[1]) {
+      previous[1] = Math.max(previous[1], range[1]);
+    } else {
+      merged.push([...range]);
+    }
+    return merged;
+  }, []);
+
+  let cursor = 0;
+  let output = "";
+  mergedRanges.forEach(([start, end]) => {
+    output += escapeHtml(text.slice(cursor, start));
+    output += `<mark class="search-highlight">${escapeHtml(text.slice(start, end))}</mark>`;
+    cursor = end;
+  });
 
   return output + escapeHtml(text.slice(cursor));
+}
+
+function insertLink() {
+  const selectedText = getSelectionText() || "链接文字";
+  const start = noteInput.selectionStart;
+  replaceSelection(`[${selectedText}](https://example.com)`);
+  const urlStart = start + selectedText.length + 3;
+  noteInput.setSelectionRange(urlStart, urlStart + "https://example.com".length);
 }
 
 function buildExportFile(note, format) {
@@ -1605,6 +1840,30 @@ function buildExportFile(note, format) {
       format,
       label: "全部 JSON",
       type: "application/json;charset=utf-8",
+    };
+  }
+
+  if (format === "all-markdown") {
+    if (!notes.length) return null;
+
+    return {
+      content: buildAllMarkdownDocument(),
+      filename: "flow-notes-all.md",
+      format,
+      label: "全部 Markdown",
+      type: "text/markdown;charset=utf-8",
+    };
+  }
+
+  if (format === "all-html") {
+    if (!notes.length) return null;
+
+    return {
+      content: buildAllHtmlDocument(),
+      filename: "flow-notes-all.html",
+      format,
+      label: "全部 HTML",
+      type: "text/html;charset=utf-8",
     };
   }
 
@@ -1641,6 +1900,50 @@ function buildExportFile(note, format) {
     format,
     filename: `${filename}.${exportFormat.extension}`,
   };
+}
+
+function buildAllMarkdownDocument() {
+  return sortNotesByUpdatedAt(notes.map(normalizeNote)).map((note) => {
+    const tags = note.tags.length ? `\n\n标签：${note.tags.map((tag) => `#${tag}`).join(" ")}` : "";
+    return `# ${note.title}\n\n更新时间：${formatOptionalDate(note.updatedAt || note.createdAt)}${tags}\n\n${note.body}`;
+  }).join("\n\n---\n\n");
+}
+
+function buildAllHtmlDocument() {
+  const content = sortNotesByUpdatedAt(notes.map(normalizeNote)).map((note) => {
+    const tags = note.tags.length ? `<p class="note-tags">${note.tags.map((tag) => `#${escapeHtml(tag)}`).join(" ")}</p>` : "";
+    return `<article class="export-note">
+      <h1>${escapeHtml(note.title)}</h1>
+      <time>${formatOptionalDate(note.updatedAt || note.createdAt)}</time>
+      ${tags}
+      ${renderMarkdown(note.body, { interactiveCode: false })}
+    </article>`;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Flow Notes 全部笔记</title>
+  <style>
+    body { max-width: 860px; margin: 48px auto; padding: 0 22px; font-family: "Segoe UI", Arial, sans-serif; color: #20231f; line-height: 1.75; }
+    .export-note { padding: 0 0 36px; margin: 0 0 36px; border-bottom: 1px solid #dce2d8; }
+    h1 { line-height: 1.2; }
+    time, .note-tags { color: #16645a; font-weight: 700; }
+    code { padding: 2px 6px; border-radius: 6px; background: #eef4ef; }
+    pre { overflow: auto; padding: 16px; border: 1px solid #dce2d8; border-radius: 8px; background: #eef4ef; }
+    pre code { padding: 0; background: transparent; color: #20231f; font-family: Consolas, monospace; font-size: 14px; }
+    img { display: block; max-width: 100%; height: auto; margin: 0 0 16px; border-radius: 8px; border: 1px solid #dce2d8; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { padding: 10px 12px; border: 1px solid #dce2d8; text-align: left; vertical-align: top; }
+    th { background: #eef4ef; color: #16645a; }
+  </style>
+</head>
+<body>
+${content}
+</body>
+</html>`;
 }
 
 function exportPdf(note) {
