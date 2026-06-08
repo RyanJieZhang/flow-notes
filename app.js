@@ -47,6 +47,7 @@ const lineGutter = document.querySelector("#lineGutter");
 const currentLineHighlight = document.querySelector("#currentLineHighlight");
 const splitResizer = document.querySelector("#splitResizer");
 const previewPanel = document.querySelector("#previewPanel");
+const outlinePanel = document.querySelector("#outlinePanel");
 const viewButtons = document.querySelectorAll(".tab-button");
 const formatToolbar = document.querySelector(".format-toolbar");
 const template = document.querySelector("#historyItemTemplate");
@@ -56,6 +57,8 @@ const CHANGELOG_ENTRIES = [
     date: "2026/06/08",
     title: "代码编辑体验",
     items: [
+      "新增右侧笔记目录，会根据 #、##、### 标题自动生成并支持点击跳转。",
+      "新增本地图片拖拽插入，拖到编辑区会自动转成可预览的 Markdown 图片。",
       "新增编辑器行号和当前行标记，写代码时更容易定位。",
       "新增缩进参考线，代码块和嵌套列表的层级更清楚。",
       "新增代码块语言选择，插入代码块时可以选择 Python、JavaScript、HTML、CSS 或 Markdown。",
@@ -191,6 +194,9 @@ noteInput.addEventListener("select", syncPreviewToEditorSelection);
 noteInput.addEventListener("click", updateEditorChrome);
 noteInput.addEventListener("keyup", updateEditorChrome);
 noteInput.addEventListener("scroll", syncEditorScroll);
+noteInput.addEventListener("dragover", handleEditorDragOver);
+noteInput.addEventListener("dragleave", handleEditorDragLeave);
+noteInput.addEventListener("drop", handleEditorDrop);
 titleInput.addEventListener("input", () => {
   updatePreview();
   markDraft();
@@ -208,6 +214,7 @@ viewButtons.forEach((button) => {
   button.addEventListener("click", () => applyView(button.dataset.view));
 });
 previewPanel.addEventListener("click", handlePreviewAction);
+outlinePanel.addEventListener("click", handleOutlineClick);
 formatToolbar.addEventListener("click", handleFormatAction);
 versionList.addEventListener("click", handleVersionAction);
 
@@ -786,12 +793,96 @@ function updatePreview() {
 
   if (!title && !body) {
     previewPanel.innerHTML = '<p class="preview-empty">预览会显示在这里</p>';
+    renderOutline([]);
     return;
   }
 
   const source = title ? `# ${title}\n\n${body}` : body;
   previewPanel.innerHTML = renderMarkdown(source, { sourceLineOffset: title ? -2 : 0 });
+  renderOutline(extractHeadings(title, noteInput.value));
   syncPreviewToEditorSelection();
+}
+
+function extractHeadings(title, body) {
+  const headings = [];
+  if (title.trim()) {
+    headings.push({
+      id: "note-title",
+      level: 1,
+      text: title.trim(),
+      line: 1,
+      isTitle: true,
+    });
+  }
+
+  body.split(/\r?\n/).forEach((line, index) => {
+    const match = line.trim().match(/^(#{1,3})\s+(.+)$/);
+    if (!match) return;
+
+    headings.push({
+      id: `heading-${index + 1}`,
+      level: match[1].length,
+      text: match[2].replace(/[*_`[\]()]/g, "").trim(),
+      line: index + 1,
+      isTitle: false,
+    });
+  });
+
+  return headings;
+}
+
+function renderOutline(headings) {
+  if (!headings.length) {
+    outlinePanel.innerHTML = '<p class="outline-empty">添加 # 标题后会生成目录</p>';
+    return;
+  }
+
+  const items = headings.map((heading) => {
+    const lineLabel = heading.isTitle ? "标题" : `第 ${heading.line} 行`;
+    return `<button class="outline-link level-${heading.level}" type="button" data-line="${heading.line}" data-title="${heading.isTitle ? "true" : "false"}">
+      <span>${escapeHtml(heading.text || "未命名标题")}</span>
+      <small>${lineLabel}</small>
+    </button>`;
+  }).join("");
+
+  outlinePanel.innerHTML = `<div class="outline-header">目录</div><nav class="outline-list">${items}</nav>`;
+}
+
+function handleOutlineClick(event) {
+  const link = event.target.closest(".outline-link");
+  if (!link) return;
+
+  const lineNumber = Number(link.dataset.line);
+  const isTitle = link.dataset.title === "true";
+  if (isTitle) {
+    titleInput.focus();
+    titleInput.select();
+    previewPanel.querySelector("[data-source-line='1']")?.scrollIntoView({ block: "center", behavior: "smooth" });
+    return;
+  }
+
+  focusEditorLine(lineNumber);
+  syncPreviewToEditorSelection();
+}
+
+function focusEditorLine(lineNumber) {
+  const lines = noteInput.value.split(/\r?\n/);
+  const targetLine = Math.min(Math.max(lineNumber, 1), lines.length);
+  const offset = lines.slice(0, targetLine - 1).reduce((total, line) => total + line.length + 1, 0);
+
+  noteInput.focus();
+  noteInput.setSelectionRange(offset, offset + lines[targetLine - 1].length);
+  scrollEditorLineIntoView(targetLine);
+  updateEditorChrome();
+}
+
+function scrollEditorLineIntoView(lineNumber) {
+  const styles = window.getComputedStyle(noteInput);
+  const lineHeight = Number.parseFloat(styles.lineHeight) || 30;
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const targetTop = paddingTop + (lineNumber - 1) * lineHeight;
+  noteInput.scrollTop = Math.max(0, targetTop - noteInput.clientHeight * 0.35);
+  syncEditorScroll();
 }
 
 function schedulePreviewSync() {
@@ -986,6 +1077,60 @@ function insertBlock(value) {
 
   noteInput.value = `${before}${insertText}${after}`;
   noteInput.setSelectionRange(start + needsLeadingBreak.length, start + needsLeadingBreak.length + value.length);
+}
+
+function handleEditorDragOver(event) {
+  if (!hasImageTransfer(event.dataTransfer)) return;
+  event.preventDefault();
+  editorSurface.classList.add("is-dragging-image");
+}
+
+function handleEditorDragLeave(event) {
+  if (editorSurface.contains(event.relatedTarget)) return;
+  editorSurface.classList.remove("is-dragging-image");
+}
+
+async function handleEditorDrop(event) {
+  const files = [...(event.dataTransfer?.files || [])].filter((file) => file.type.startsWith("image/"));
+  if (!files.length) return;
+
+  event.preventDefault();
+  editorSurface.classList.remove("is-dragging-image");
+  noteInput.focus();
+
+  let imageBlocks;
+  try {
+    imageBlocks = await Promise.all(files.map(async (file) => {
+      const dataUrl = await readFileAsDataUrl(file);
+      const altText = file.name.replace(/\.[^.]+$/, "").replace(/[\][()]/g, " ").trim() || "本地图片";
+      return `![${altText}](${dataUrl})`;
+    }));
+  } catch {
+    saveStatus.textContent = "图片读取失败，请重试";
+    return;
+  }
+
+  insertBlock(imageBlocks.join("\n\n"));
+  updateEditorState();
+  saveStatus.textContent = `已插入 ${files.length} 张图片`;
+}
+
+function hasImageTransfer(dataTransfer) {
+  const files = [...(dataTransfer?.files || [])];
+  if (files.some((file) => file.type.startsWith("image/"))) return true;
+
+  return [...(dataTransfer?.items || [])].some((item) => {
+    return item.kind === "file" && item.type.startsWith("image/");
+  });
+}
+
+function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.addEventListener("load", () => resolve(reader.result));
+    reader.addEventListener("error", () => reject(reader.error));
+    reader.readAsDataURL(file);
+  });
 }
 
 function handleEditorKeydown(event) {
