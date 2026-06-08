@@ -12,6 +12,7 @@ const noteInput = document.querySelector("#noteInput");
 const saveButton = document.querySelector("#saveButton");
 const newNoteButton = document.querySelector("#newNoteButton");
 const codeBlockButton = document.querySelector("#codeBlockButton");
+const codeLanguageSelect = document.querySelector("#codeLanguageSelect");
 const exportButton = document.querySelector("#exportButton");
 const exportFormatSelect = document.querySelector("#exportFormatSelect");
 const clearButton = document.querySelector("#clearButton");
@@ -39,6 +40,9 @@ const tagInput = document.querySelector("#tagInput");
 const pinButton = document.querySelector("#pinButton");
 const archiveButton = document.querySelector("#archiveButton");
 const workspace = document.querySelector("#workspace");
+const editorSurface = document.querySelector("#editorSurface");
+const lineGutter = document.querySelector("#lineGutter");
+const currentLineHighlight = document.querySelector("#currentLineHighlight");
 const splitResizer = document.querySelector("#splitResizer");
 const previewPanel = document.querySelector("#previewPanel");
 const viewButtons = document.querySelectorAll(".tab-button");
@@ -46,6 +50,15 @@ const formatToolbar = document.querySelector(".format-toolbar");
 const template = document.querySelector("#historyItemTemplate");
 
 const CHANGELOG_ENTRIES = [
+  {
+    date: "2026/06/08",
+    title: "代码编辑体验",
+    items: [
+      "新增编辑器行号和当前行标记，写代码时更容易定位。",
+      "新增缩进参考线，代码块和嵌套列表的层级更清楚。",
+      "新增代码块语言选择，插入代码块时可以选择 Python、JavaScript、HTML、CSS 或 Markdown。",
+    ],
+  },
   {
     date: "2026/06/07",
     title: "专业编辑增强",
@@ -112,6 +125,7 @@ applyView(activeView);
 render();
 syncEditorFromDraftOrActiveNote();
 updatePreview();
+updateEditorChrome();
 
 saveButton.addEventListener("click", saveCurrentNote);
 newNoteButton.addEventListener("click", startFreshNote);
@@ -152,6 +166,7 @@ tagFilter.addEventListener("change", renderHistory);
 noteInput.addEventListener("input", () => {
   updateWordCount();
   updatePreview();
+  updateEditorChrome();
   markDraft();
   saveDraft();
   schedulePreviewSync();
@@ -160,6 +175,9 @@ noteInput.addEventListener("keydown", handleEditorKeydown);
 noteInput.addEventListener("click", syncPreviewToEditorSelection);
 noteInput.addEventListener("keyup", syncPreviewToEditorSelection);
 noteInput.addEventListener("select", syncPreviewToEditorSelection);
+noteInput.addEventListener("click", updateEditorChrome);
+noteInput.addEventListener("keyup", updateEditorChrome);
+noteInput.addEventListener("scroll", syncEditorScroll);
 titleInput.addEventListener("input", () => {
   updatePreview();
   markDraft();
@@ -269,6 +287,7 @@ function startFreshNote() {
   clearDraft();
   updateWordCount();
   updatePreview();
+  updateEditorChrome();
   updateNoteActions();
   renderHistory();
   titleInput.focus();
@@ -364,6 +383,7 @@ function syncEditorFromDraftOrActiveNote() {
     saveStatus.textContent = `草稿已恢复：${formatDate(new Date(draft.updatedAt))}`;
     updateWordCount();
     updatePreview();
+    updateEditorChrome();
     updateNoteActions();
     return;
   }
@@ -380,6 +400,7 @@ function syncEditorFromActiveNote() {
     tagInput.value = "";
     updateWordCount();
     updatePreview();
+    updateEditorChrome();
     updateNoteActions();
     return;
   }
@@ -390,6 +411,7 @@ function syncEditorFromActiveNote() {
   saveStatus.textContent = `正在编辑：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`;
   updateWordCount();
   updatePreview();
+  updateEditorChrome();
   updateNoteActions();
 }
 
@@ -787,6 +809,40 @@ function getCurrentEditorLine() {
   return noteInput.value.slice(0, selectionStart).split(/\r?\n/).length;
 }
 
+function updateEditorChrome() {
+  renderLineNumbers();
+  updateCurrentLineHighlight();
+  syncEditorScroll();
+}
+
+function renderLineNumbers() {
+  const lineCount = Math.max(1, noteInput.value.split(/\r?\n/).length);
+  if (Number(lineGutter.dataset.lineCount) === lineCount) return;
+
+  lineGutter.dataset.lineCount = String(lineCount);
+  lineGutter.innerHTML = Array.from({ length: lineCount }, (_, index) => {
+    return `<span data-line-number="${index + 1}">${index + 1}</span>`;
+  }).join("");
+}
+
+function updateCurrentLineHighlight() {
+  const lineNumber = getCurrentEditorLine();
+  const styles = window.getComputedStyle(noteInput);
+  const lineHeight = Number.parseFloat(styles.lineHeight) || 30;
+  const paddingTop = Number.parseFloat(styles.paddingTop) || 0;
+  const top = paddingTop + (lineNumber - 1) * lineHeight - noteInput.scrollTop;
+
+  currentLineHighlight.style.top = `${top}px`;
+  currentLineHighlight.style.height = `${lineHeight}px`;
+  lineGutter.querySelector(".active-line")?.classList.remove("active-line");
+  lineGutter.querySelector(`[data-line-number="${lineNumber}"]`)?.classList.add("active-line");
+}
+
+function syncEditorScroll() {
+  lineGutter.scrollTop = noteInput.scrollTop;
+  updateCurrentLineHighlight();
+}
+
 function findPreviewBlockForLine(lineNumber) {
   const blocks = [...previewPanel.querySelectorAll("[data-source-line]")];
   if (!blocks.length) return null;
@@ -802,7 +858,9 @@ function findPreviewBlockForLine(lineNumber) {
 function insertPythonCodeBlock() {
   applyView(activeView === "preview" ? "edit" : activeView);
 
-  const template = '```python\n# 在这里写 Python 代码\nprint("Hello Flow Notes")\n```';
+  const language = codeLanguageSelect.value || "python";
+  const label = getLanguageLabel(language);
+  const template = `\`\`\`${language}\n# 在这里写 ${label} 代码\n${getCodeTemplate(language)}\n\`\`\``;
   const selectionStart = noteInput.selectionStart;
   const selectionEnd = noteInput.selectionEnd;
   const before = noteInput.value.slice(0, selectionStart);
@@ -810,15 +868,40 @@ function insertPythonCodeBlock() {
   const needsLeadingBreak = before && !before.endsWith("\n") ? "\n\n" : "";
   const needsTrailingBreak = after && !after.startsWith("\n") ? "\n\n" : "";
   const insertText = `${needsLeadingBreak}${template}${needsTrailingBreak}`;
-  const cursorOffset = needsLeadingBreak.length + "```python\n".length;
+  const cursorOffset = needsLeadingBreak.length + `\`\`\`${language}\n`.length;
 
   noteInput.value = `${before}${insertText}${after}`;
   noteInput.focus();
-  noteInput.setSelectionRange(selectionStart + cursorOffset, selectionStart + cursorOffset + "# 在这里写 Python 代码".length);
+  noteInput.setSelectionRange(selectionStart + cursorOffset, selectionStart + cursorOffset + `# 在这里写 ${label} 代码`.length);
   updateWordCount();
   updatePreview();
+  updateEditorChrome();
   markDraft();
   saveDraft();
+}
+
+function getLanguageLabel(language) {
+  const labels = {
+    python: "Python",
+    javascript: "JavaScript",
+    html: "HTML",
+    css: "CSS",
+    markdown: "Markdown",
+  };
+
+  return labels[language] || language;
+}
+
+function getCodeTemplate(language) {
+  const templates = {
+    python: 'print("Hello Flow Notes")',
+    javascript: 'console.log("Hello Flow Notes");',
+    html: '<h1>Hello Flow Notes</h1>',
+    css: "body {\n    color: #16645a;\n}",
+    markdown: "## 小标题",
+  };
+
+  return templates[language] || "";
 }
 
 function handleFormatAction(event) {
@@ -956,6 +1039,7 @@ function replaceSelection(value) {
 function updateEditorState() {
   updateWordCount();
   updatePreview();
+  updateEditorChrome();
   markDraft();
   saveDraft();
   schedulePreviewSync();

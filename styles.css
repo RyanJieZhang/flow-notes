@@ -235,7 +235,7 @@ h1 {
 .filter-row select:focus,
 .tag-editor input:focus,
 .title-input:focus,
-.note-input:focus {
+.editor-surface:focus-within {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px rgba(22, 100, 90, 0.14);
 }
@@ -545,11 +545,10 @@ body.resizing-split {
   background: var(--accent-strong);
 }
 
-.note-input,
+.editor-surface,
 .preview-panel {
   width: 100%;
   min-height: 420px;
-  padding: 24px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--surface);
@@ -560,18 +559,81 @@ body.resizing-split {
   box-shadow: var(--shadow);
 }
 
+.editor-surface {
+  position: relative;
+  display: grid;
+  grid-template-columns: 54px minmax(0, 1fr);
+  overflow: hidden;
+}
+
 .note-input {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  min-height: 420px;
+  padding: 24px;
+  border: 0;
+  background-color: transparent;
+  background-image: repeating-linear-gradient(
+    to right,
+    transparent 0,
+    transparent calc(4ch - 1px),
+    rgba(22, 100, 90, 0.08) calc(4ch - 1px),
+    rgba(22, 100, 90, 0.08) 4ch
+  );
+  background-position: 24px 0;
+  background-size: 4ch 100%;
+  color: var(--ink);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 16px;
+  line-height: 1.7;
+  outline: none;
   resize: none;
+}
+
+.line-gutter {
+  position: relative;
+  z-index: 3;
+  overflow: hidden;
+  padding: 24px 10px 24px 8px;
+  border-right: 1px solid var(--line);
+  background: var(--surface-soft);
+  color: var(--muted);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 13px;
+  line-height: 2.09;
+  text-align: right;
+  user-select: none;
+}
+
+.line-gutter span {
+  display: block;
+  height: 2.09em;
+}
+
+.line-gutter .active-line {
+  color: var(--accent-strong);
+  font-weight: 900;
+}
+
+.current-line-highlight {
+  position: absolute;
+  right: 0;
+  left: 54px;
+  z-index: 1;
+  background: rgba(22, 100, 90, 0.08);
+  pointer-events: none;
 }
 
 .preview-panel {
   overflow: auto;
+  padding: 24px;
 }
 
 .workspace[data-view="edit"] .preview-panel,
 .workspace[data-view="edit"] .split-resizer,
 .workspace[data-view="preview"] .split-resizer,
-.workspace[data-view="preview"] .note-input {
+.workspace[data-view="preview"] .editor-surface {
   display: none;
 }
 
@@ -988,9 +1050,13 @@ body.resizing-split {
     cursor: col-resize;
   }
 
-  .note-input,
+  .editor-surface,
   .preview-panel {
     min-height: 48vh;
+  }
+
+  .note-input,
+  .preview-panel {
     font-size: 16px;
   }
 

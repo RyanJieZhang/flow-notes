@@ -81,6 +81,16 @@
               <option value="all-json">全部 JSON</option>
             </select>
           </label>
+          <label class="export-select code-language-select">
+            <span>代码语言</span>
+            <select id="codeLanguageSelect">
+              <option value="python">Python</option>
+              <option value="javascript">JavaScript</option>
+              <option value="html">HTML</option>
+              <option value="css">CSS</option>
+              <option value="markdown">Markdown</option>
+            </select>
+          </label>
           <button id="codeBlockButton" class="ghost-button" type="button">+代码块</button>
           <button id="exportButton" class="ghost-button" type="button">导出</button>
           <button id="saveButton" class="primary-button" type="button">保存</button>
@@ -111,7 +121,11 @@
       </div>
 
       <div class="workspace" id="workspace" data-view="edit">
-        <textarea id="noteInput" class="note-input" placeholder="把想法写在这里。支持 Markdown，保存后可以继续编辑，也可以切到预览查看排版。"></textarea>
+        <div class="editor-surface" id="editorSurface">
+          <div class="line-gutter" id="lineGutter" aria-hidden="true"></div>
+          <div class="current-line-highlight" id="currentLineHighlight" aria-hidden="true"></div>
+          <textarea id="noteInput" class="note-input" spellcheck="false" placeholder="把想法写在这里。支持 Markdown，保存后可以继续编辑，也可以切到预览查看排版。"></textarea>
+        </div>
         <div class="split-resizer" id="splitResizer" role="separator" aria-label="调整编辑区和预览区宽度" aria-orientation="vertical" tabindex="0"></div>
         <article class="preview-panel" id="previewPanel" aria-label="Markdown 预览"></article>
       </div>
