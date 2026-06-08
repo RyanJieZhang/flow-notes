@@ -60,6 +60,10 @@ button {
   grid-template-columns: 0 34px minmax(0, 1fr);
 }
 
+.app-shell.focus-mode {
+  grid-template-columns: minmax(0, 1fr);
+}
+
 .history-panel {
   display: flex;
   flex-direction: column;
@@ -117,6 +121,15 @@ button {
 }
 
 .sidebar-collapsed .sidebar-resizer {
+  display: none;
+}
+
+.focus-mode .history-panel,
+.focus-mode .sidebar-control,
+.focus-mode .editor-toolbar,
+.focus-mode .note-meta-panel,
+.focus-mode .format-toolbar,
+.focus-mode .status-bar {
   display: none;
 }
 
@@ -415,6 +428,13 @@ h1 {
   padding: 30px;
 }
 
+.focus-mode .editor-panel {
+  min-height: 100vh;
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+  padding: clamp(14px, 3vw, 42px);
+}
+
 .editor-toolbar {
   min-width: 0;
 }
@@ -564,6 +584,12 @@ body.resizing-split {
   display: grid;
   grid-template-columns: 54px minmax(0, 1fr);
   overflow: hidden;
+}
+
+.focus-mode .workspace,
+.focus-mode .editor-surface,
+.focus-mode .note-input {
+  min-height: calc(100vh - clamp(28px, 6vw, 84px));
 }
 
 .note-input {
@@ -846,6 +872,30 @@ body.resizing-split {
   border-radius: 8px;
 }
 
+.focus-exit-button[hidden] {
+  display: none;
+}
+
+.focus-exit-button {
+  position: fixed;
+  top: 18px;
+  right: 18px;
+  z-index: 15;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 14px;
+  font-weight: 800;
+  box-shadow: var(--shadow);
+}
+
+.focus-exit-button:hover,
+.focus-exit-button:focus-visible {
+  background: var(--accent-strong);
+  outline: none;
+}
+
 .modal-backdrop[hidden] {
   display: none;
 }
@@ -970,6 +1020,10 @@ body.resizing-split {
     grid-template-columns: 1fr;
   }
 
+  .app-shell.focus-mode {
+    grid-template-columns: 1fr;
+  }
+
   .history-panel {
     max-height: 42vh;
     border-right: 0;
@@ -990,6 +1044,11 @@ body.resizing-split {
   .editor-panel {
     min-height: 58vh;
     padding: 20px;
+  }
+
+  .focus-mode .editor-panel {
+    min-height: 100vh;
+    padding: 12px;
   }
 
   .editor-toolbar {

@@ -39,6 +39,8 @@ const wordCount = document.querySelector("#wordCount");
 const tagInput = document.querySelector("#tagInput");
 const pinButton = document.querySelector("#pinButton");
 const archiveButton = document.querySelector("#archiveButton");
+const focusModeButton = document.querySelector("#focusModeButton");
+const exitFocusButton = document.querySelector("#exitFocusButton");
 const workspace = document.querySelector("#workspace");
 const editorSurface = document.querySelector("#editorSurface");
 const lineGutter = document.querySelector("#lineGutter");
@@ -57,6 +59,7 @@ const CHANGELOG_ENTRIES = [
       "新增编辑器行号和当前行标记，写代码时更容易定位。",
       "新增缩进参考线，代码块和嵌套列表的层级更清楚。",
       "新增代码块语言选择，插入代码块时可以选择 Python、JavaScript、HTML、CSS 或 Markdown。",
+      "新增专注写作模式，一键隐藏历史栏、标签栏和工具栏，只保留正文。",
     ],
   },
   {
@@ -115,6 +118,8 @@ let activeView = localStorage.getItem(VIEW_KEY) || "edit";
 let sidebarWidth = loadSidebarWidth();
 let isSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 let splitRatio = loadSplitRatio();
+let isFocusMode = false;
+let viewBeforeFocus = activeView;
 let pyodideReadyPromise = null;
 let previewSyncTimer = null;
 
@@ -146,8 +151,16 @@ versionsDialog.addEventListener("click", (event) => {
   if (event.target === versionsDialog) closeVersions();
 });
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape" && !changelogDialog.hidden) closeChangelog();
-  if (event.key === "Escape" && !versionsDialog.hidden) closeVersions();
+  if (event.key !== "Escape") return;
+  if (!changelogDialog.hidden) {
+    closeChangelog();
+    return;
+  }
+  if (!versionsDialog.hidden) {
+    closeVersions();
+    return;
+  }
+  if (isFocusMode) exitFocusMode();
 });
 window.addEventListener("resize", () => {
   sidebarWidth = clampSidebarWidth(sidebarWidth);
@@ -189,6 +202,8 @@ tagInput.addEventListener("input", () => {
 });
 pinButton.addEventListener("click", togglePinned);
 archiveButton.addEventListener("click", toggleArchived);
+focusModeButton.addEventListener("click", enterFocusMode);
+exitFocusButton.addEventListener("click", exitFocusMode);
 viewButtons.forEach((button) => {
   button.addEventListener("click", () => applyView(button.dataset.view));
 });
@@ -1292,6 +1307,29 @@ ${autoPrint ? "<script>window.addEventListener('load', () => setTimeout(() => wi
 
 function markDraft() {
   saveStatus.textContent = "正在编辑";
+}
+
+function enterFocusMode() {
+  if (isFocusMode) return;
+
+  viewBeforeFocus = activeView;
+  isFocusMode = true;
+  appShell.classList.add("focus-mode");
+  exitFocusButton.hidden = false;
+  applyView("edit");
+  noteInput.focus();
+  updateEditorChrome();
+}
+
+function exitFocusMode() {
+  if (!isFocusMode) return;
+
+  isFocusMode = false;
+  appShell.classList.remove("focus-mode");
+  exitFocusButton.hidden = true;
+  applyView(viewBeforeFocus);
+  noteInput.focus();
+  updateEditorChrome();
 }
 
 function applyView(view) {
