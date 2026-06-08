@@ -421,6 +421,18 @@ h1 {
   font-weight: 700;
 }
 
+.history-item .search-highlight {
+  border-radius: 4px;
+  background: rgba(255, 214, 102, 0.72);
+  color: var(--ink);
+  padding: 0 2px;
+}
+
+:root[data-theme="dark"] .history-item .search-highlight {
+  background: rgba(255, 214, 102, 0.34);
+  color: var(--ink);
+}
+
 .editor-panel {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr) auto;

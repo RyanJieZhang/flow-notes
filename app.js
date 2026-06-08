@@ -59,6 +59,7 @@ const CHANGELOG_ENTRIES = [
     items: [
       "新增右侧笔记目录，会根据 #、##、### 标题自动生成并支持点击跳转。",
       "新增本地图片拖拽插入，拖到编辑区会自动转成可预览的 Markdown 图片。",
+      "新增历史搜索高亮，标题、正文摘要和标签中的命中词会直接标出。",
       "新增编辑器行号和当前行标记，写代码时更容易定位。",
       "新增缩进参考线，代码块和嵌套列表的层级更清楚。",
       "新增代码块语言选择，插入代码块时可以选择 Python、JavaScript、HTML、CSS 或 Markdown。",
@@ -758,9 +759,9 @@ function renderHistory() {
     button.classList.toggle("archived", Boolean(note.archived));
     restoreButton.addEventListener("click", () => restoreNote(note.id));
     deleteButton.addEventListener("click", () => deleteNote(note.id));
-    title.textContent = `${note.pinned ? "★ " : ""}${note.title}`;
-    preview.textContent = getSearchPreview(note, query);
-    tagline.textContent = note.tags?.length ? note.tags.map((tag) => `#${tag}`).join(" ") : "无标签";
+    title.innerHTML = `${note.pinned ? "★ " : ""}${highlightSearchMatches(note.title, query)}`;
+    preview.innerHTML = highlightSearchMatches(getSearchPreview(note, query), query);
+    tagline.innerHTML = note.tags?.length ? highlightSearchMatches(note.tags.map((tag) => `#${tag}`).join(" "), query) : "无标签";
     time.textContent = `${note.archived ? "归档 · " : ""}${formatDate(new Date(note.updatedAt || note.createdAt))}`;
     historyList.append(item);
   });
@@ -1354,6 +1355,27 @@ function getSearchPreview(note, query) {
   const start = Math.max(0, index - 24);
   const end = Math.min(note.body.length, index + query.length + 48);
   return `${start > 0 ? "..." : ""}${note.body.slice(start, end)}${end < note.body.length ? "..." : ""}`;
+}
+
+function highlightSearchMatches(value, query) {
+  const text = String(value || "");
+  const needle = String(query || "").trim();
+  if (!needle) return escapeHtml(text);
+
+  const lowerText = text.toLowerCase();
+  const lowerNeedle = needle.toLowerCase();
+  let cursor = 0;
+  let matchIndex = lowerText.indexOf(lowerNeedle);
+  let output = "";
+
+  while (matchIndex >= 0) {
+    output += escapeHtml(text.slice(cursor, matchIndex));
+    output += `<mark class="search-highlight">${escapeHtml(text.slice(matchIndex, matchIndex + needle.length))}</mark>`;
+    cursor = matchIndex + needle.length;
+    matchIndex = lowerText.indexOf(lowerNeedle, cursor);
+  }
+
+  return output + escapeHtml(text.slice(cursor));
 }
 
 function buildExportFile(note, format) {
