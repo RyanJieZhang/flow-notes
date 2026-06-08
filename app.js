@@ -5,6 +5,10 @@ const VIEW_KEY = "flow-notes-view";
 const SIDEBAR_WIDTH_KEY = "flow-notes-sidebar-width";
 const SIDEBAR_COLLAPSED_KEY = "flow-notes-sidebar-collapsed";
 const SPLIT_RATIO_KEY = "flow-notes-split-ratio";
+const BACKUP_META_KEY = "flow-notes-backup-meta";
+const BACKUP_SAVE_INTERVAL = 20;
+const BACKUP_DAY_INTERVAL = 7;
+const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const appShell = document.querySelector("#appShell");
 const titleInput = document.querySelector("#titleInput");
@@ -27,6 +31,18 @@ const versionsButton = document.querySelector("#versionsButton");
 const versionsDialog = document.querySelector("#versionsDialog");
 const closeVersionsButton = document.querySelector("#closeVersionsButton");
 const versionList = document.querySelector("#versionList");
+const backupDialog = document.querySelector("#backupDialog");
+const closeBackupButton = document.querySelector("#closeBackupButton");
+const backupLaterButton = document.querySelector("#backupLaterButton");
+const backupNowButton = document.querySelector("#backupNowButton");
+const backupMessage = document.querySelector("#backupMessage");
+const importDialog = document.querySelector("#importDialog");
+const closeImportButton = document.querySelector("#closeImportButton");
+const importSummary = document.querySelector("#importSummary");
+const importPreviewList = document.querySelector("#importPreviewList");
+const previewImportButton = document.querySelector("#previewImportButton");
+const mergeImportButton = document.querySelector("#mergeImportButton");
+const overwriteImportButton = document.querySelector("#overwriteImportButton");
 const sidebarToggleButton = document.querySelector("#sidebarToggleButton");
 const sidebarResizer = document.querySelector("#sidebarResizer");
 const searchInput = document.querySelector("#searchInput");
@@ -57,6 +73,8 @@ const CHANGELOG_ENTRIES = [
     date: "2026/06/08",
     title: "代码编辑体验",
     items: [
+      "新增自动备份提醒，每保存 20 次或距离上次备份 7 天会提示导出全部 JSON。",
+      "导入 JSON 备份前新增确认面板，可选择覆盖当前、合并导入或仅预览。",
       "新增右侧笔记目录，会根据 #、##、### 标题自动生成并支持点击跳转。",
       "新增本地图片拖拽插入，拖到编辑区会自动转成可预览的 Markdown 图片。",
       "新增历史搜索高亮，标题、正文摘要和标签中的命中词会直接标出。",
@@ -124,6 +142,7 @@ let isSidebarCollapsed = localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === "true";
 let splitRatio = loadSplitRatio();
 let isFocusMode = false;
 let viewBeforeFocus = activeView;
+let pendingImportNotes = [];
 let pyodideReadyPromise = null;
 let previewSyncTimer = null;
 
@@ -154,6 +173,19 @@ closeVersionsButton.addEventListener("click", closeVersions);
 versionsDialog.addEventListener("click", (event) => {
   if (event.target === versionsDialog) closeVersions();
 });
+closeBackupButton.addEventListener("click", closeBackupReminder);
+backupLaterButton.addEventListener("click", closeBackupReminder);
+backupNowButton.addEventListener("click", exportBackupFromReminder);
+backupDialog.addEventListener("click", (event) => {
+  if (event.target === backupDialog) closeBackupReminder();
+});
+closeImportButton.addEventListener("click", closeImportDialog);
+previewImportButton.addEventListener("click", previewImportOnly);
+mergeImportButton.addEventListener("click", () => applyPendingImport("merge"));
+overwriteImportButton.addEventListener("click", () => applyPendingImport("overwrite"));
+importDialog.addEventListener("click", (event) => {
+  if (event.target === importDialog) closeImportDialog();
+});
 document.addEventListener("keydown", (event) => {
   if (event.key !== "Escape") return;
   if (!changelogDialog.hidden) {
@@ -162,6 +194,14 @@ document.addEventListener("keydown", (event) => {
   }
   if (!versionsDialog.hidden) {
     closeVersions();
+    return;
+  }
+  if (!backupDialog.hidden) {
+    closeBackupReminder();
+    return;
+  }
+  if (!importDialog.hidden) {
+    closeImportDialog();
     return;
   }
   if (isFocusMode) exitFocusMode();
@@ -299,6 +339,7 @@ function saveCurrentNote() {
   persistNotes();
   clearDraft();
   render();
+  recordSaveForBackupReminder();
 }
 
 function startFreshNote() {
@@ -456,6 +497,10 @@ function exportCurrentNote() {
     return;
   }
 
+  downloadExportFile(exportFile);
+}
+
+function downloadExportFile(exportFile) {
   const blob = new Blob([exportFile.content], { type: exportFile.type });
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
@@ -468,6 +513,10 @@ function exportCurrentNote() {
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 500);
   saveStatus.textContent = `已导出：${exportFile.label}`;
+
+  if (exportFile.format === "all-json") {
+    markBackupCompleted();
+  }
 }
 
 function clearHistory() {
@@ -1253,6 +1302,99 @@ function buildExportNote(title, body) {
   };
 }
 
+function loadBackupMeta() {
+  try {
+    const meta = JSON.parse(localStorage.getItem(BACKUP_META_KEY) || "null");
+    if (meta && typeof meta === "object") {
+      return {
+        saveCountSinceBackup: Number(meta.saveCountSinceBackup) || 0,
+        lastBackupAt: meta.lastBackupAt || new Date().toISOString(),
+        lastReminderAt: meta.lastReminderAt || null,
+      };
+    }
+  } catch {
+    // Fall through to a fresh backup metadata record.
+  }
+
+  return {
+    saveCountSinceBackup: 0,
+    lastBackupAt: new Date().toISOString(),
+    lastReminderAt: null,
+  };
+}
+
+function persistBackupMeta(meta) {
+  localStorage.setItem(BACKUP_META_KEY, JSON.stringify(meta));
+}
+
+function recordSaveForBackupReminder() {
+  if (!notes.length) return;
+
+  const meta = loadBackupMeta();
+  meta.saveCountSinceBackup += 1;
+  persistBackupMeta(meta);
+
+  if (shouldShowBackupReminder(meta)) {
+    openBackupReminder(meta);
+  }
+}
+
+function shouldShowBackupReminder(meta) {
+  const now = Date.now();
+  const lastBackupTime = new Date(meta.lastBackupAt || 0).getTime();
+  const lastReminderTime = meta.lastReminderAt ? new Date(meta.lastReminderAt).getTime() : 0;
+  const dueBySaves = meta.saveCountSinceBackup >= BACKUP_SAVE_INTERVAL;
+  const dueByDays = Number.isFinite(lastBackupTime) && now - lastBackupTime >= BACKUP_DAY_INTERVAL * ONE_DAY_MS;
+  const remindedRecently = lastReminderTime && now - lastReminderTime < ONE_DAY_MS;
+
+  return (dueBySaves || dueByDays) && !remindedRecently;
+}
+
+function openBackupReminder(meta) {
+  const now = new Date().toISOString();
+  const lastBackupTime = new Date(meta.lastBackupAt || now).getTime();
+  const daysSinceBackup = Math.max(0, Math.floor((Date.now() - lastBackupTime) / ONE_DAY_MS));
+  const reasons = [];
+
+  if (meta.saveCountSinceBackup >= BACKUP_SAVE_INTERVAL) {
+    reasons.push(`已保存 ${meta.saveCountSinceBackup} 次`);
+  }
+  if (daysSinceBackup >= BACKUP_DAY_INTERVAL) {
+    reasons.push(`距离上次备份约 ${daysSinceBackup} 天`);
+  }
+
+  backupMessage.textContent = `${reasons.join("，")}，建议现在导出全部 JSON，防止浏览器 localStorage 数据丢失。`;
+  meta.lastReminderAt = now;
+  persistBackupMeta(meta);
+  backupDialog.hidden = false;
+  backupNowButton.focus();
+}
+
+function closeBackupReminder() {
+  backupDialog.hidden = true;
+  saveButton.focus();
+}
+
+function exportBackupFromReminder() {
+  const exportFile = buildExportFile(buildExportNote(titleInput.value.trim() || "未命名笔记", noteInput.value), "all-json");
+  if (!exportFile) {
+    saveStatus.textContent = "没有可备份的笔记";
+    closeBackupReminder();
+    return;
+  }
+
+  downloadExportFile(exportFile);
+  closeBackupReminder();
+}
+
+function markBackupCompleted() {
+  persistBackupMeta({
+    saveCountSinceBackup: 0,
+    lastBackupAt: new Date().toISOString(),
+    lastReminderAt: null,
+  });
+}
+
 function importNotes() {
   const file = importInput.files?.[0];
   if (!file) return;
@@ -1268,21 +1410,7 @@ function importNotes() {
         return;
       }
 
-      const existingIds = new Set(notes.map((note) => note.id));
-      const mergedNotes = importedNotes.map((note) => ({
-        ...note,
-        id: existingIds.has(note.id) ? createNoteId() : note.id,
-      }));
-
-      notes = [...mergedNotes, ...notes].sort((first, second) => {
-        return new Date(second.updatedAt || second.createdAt) - new Date(first.updatedAt || first.createdAt);
-      });
-      activeNoteId = mergedNotes[0].id;
-      persistNotes();
-      clearDraft();
-      syncEditorFromActiveNote();
-      render();
-      saveStatus.textContent = `已导入 ${mergedNotes.length} 条笔记`;
+      openImportDialog(importedNotes, file.name);
     } catch {
       saveStatus.textContent = "JSON 格式不正确，导入失败";
     } finally {
@@ -1290,6 +1418,93 @@ function importNotes() {
     }
   });
   reader.readAsText(file, "utf-8");
+}
+
+function openImportDialog(importedNotes, filename) {
+  pendingImportNotes = importedNotes;
+  const latestNote = importedNotes.slice().sort((first, second) => {
+    return new Date(second.updatedAt || second.createdAt) - new Date(first.updatedAt || first.createdAt);
+  })[0];
+
+  importSummary.textContent = `文件「${filename}」包含 ${importedNotes.length} 条笔记。当前浏览器已有 ${notes.length} 条笔记，请先预览再选择导入方式。最新一条：${latestNote?.title || "未命名笔记"}。`;
+  renderImportPreview(importedNotes);
+  importDialog.hidden = false;
+  mergeImportButton.focus();
+}
+
+function renderImportPreview(importedNotes) {
+  const previewItems = importedNotes.slice(0, 6).map((note) => {
+    const tags = note.tags?.length ? note.tags.map((tag) => `#${tag}`).join(" ") : "无标签";
+    const body = note.body ? note.body.slice(0, 90) : "空白笔记";
+    return `<article class="import-preview-item">
+      <div>
+        <h3>${escapeHtml(note.title || "未命名笔记")}</h3>
+        <p>${escapeHtml(body)}${note.body?.length > 90 ? "..." : ""}</p>
+        <small>${escapeHtml(tags)} · ${formatOptionalDate(note.updatedAt || note.createdAt)}</small>
+      </div>
+    </article>`;
+  }).join("");
+
+  const remaining = importedNotes.length > 6 ? `<p class="modal-copy">还有 ${importedNotes.length - 6} 条未显示。</p>` : "";
+  importPreviewList.innerHTML = previewItems + remaining;
+}
+
+function closeImportDialog() {
+  pendingImportNotes = [];
+  importDialog.hidden = true;
+  importInput.value = "";
+  importButton.focus();
+}
+
+function previewImportOnly() {
+  saveStatus.textContent = `已预览 ${pendingImportNotes.length} 条笔记，未导入`;
+  closeImportDialog();
+}
+
+function applyPendingImport(mode) {
+  if (!pendingImportNotes.length) return;
+
+  const preparedNotes = ensureUniqueImportedIds(pendingImportNotes, mode === "merge" ? new Set(notes.map((note) => note.id)) : new Set());
+
+  if (mode === "overwrite") {
+    const confirmed = window.confirm("覆盖当前会替换浏览器里现有全部笔记。确定继续吗？");
+    if (!confirmed) return;
+    notes = sortNotesByUpdatedAt(preparedNotes);
+  } else {
+    notes = sortNotesByUpdatedAt([...preparedNotes, ...notes]);
+  }
+
+  activeNoteId = notes[0]?.id ?? null;
+  persistNotes();
+  clearDraft();
+  syncEditorFromActiveNote();
+  render();
+  saveStatus.textContent = mode === "overwrite" ? `已覆盖导入 ${preparedNotes.length} 条笔记` : `已合并导入 ${preparedNotes.length} 条笔记`;
+  closeImportDialog();
+}
+
+function ensureUniqueImportedIds(importedNotes, existingIds) {
+  const usedIds = new Set(existingIds);
+
+  return importedNotes.map((note) => {
+    const nextNote = { ...note };
+    if (!nextNote.id || usedIds.has(nextNote.id)) {
+      nextNote.id = createNoteId();
+    }
+    usedIds.add(nextNote.id);
+    return nextNote;
+  });
+}
+
+function sortNotesByUpdatedAt(noteList) {
+  return noteList.sort((first, second) => {
+    return new Date(second.updatedAt || second.createdAt) - new Date(first.updatedAt || first.createdAt);
+  });
+}
+
+function formatOptionalDate(value) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? "时间未知" : formatDate(date);
 }
 
 function normalizeImportedNotes(value) {
@@ -1387,6 +1602,7 @@ function buildExportFile(note, format) {
     return {
       content: JSON.stringify({ exportedAt: new Date().toISOString(), notes: notes.map(normalizeNote) }, null, 2),
       filename: "flow-notes-backup.json",
+      format,
       label: "全部 JSON",
       type: "application/json;charset=utf-8",
     };
@@ -1422,6 +1638,7 @@ function buildExportFile(note, format) {
   const exportFormat = formats[format] || formats.markdown;
   return {
     ...exportFormat,
+    format,
     filename: `${filename}.${exportFormat.extension}`,
   };
 }

@@ -1044,6 +1044,30 @@ body.resizing-split {
   font-size: 28px;
 }
 
+.modal-copy {
+  margin: 0 0 16px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.modal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.danger-button {
+  background: var(--warning);
+}
+
+.danger-button:hover,
+.danger-button:focus-visible {
+  background: #8f4329;
+}
+
 .changelog-list {
   display: grid;
   gap: 14px;
@@ -1109,6 +1133,37 @@ body.resizing-split {
   margin: 8px 0 0;
   color: var(--muted);
   line-height: 1.5;
+}
+
+.import-preview-list {
+  display: grid;
+  gap: 10px;
+  max-height: 340px;
+  overflow: auto;
+}
+
+.import-preview-item {
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface-soft);
+}
+
+.import-preview-item h3 {
+  margin: 0 0 6px;
+  font-size: 16px;
+}
+
+.import-preview-item p {
+  margin: 0 0 8px;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.import-preview-item small {
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 800;
 }
 
 @media (max-width: 780px) {

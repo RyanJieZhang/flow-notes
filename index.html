@@ -167,6 +167,42 @@
     </section>
   </div>
 
+  <div class="modal-backdrop" id="backupDialog" hidden>
+    <section class="changelog-modal" role="dialog" aria-modal="true" aria-labelledby="backupTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Backup</p>
+          <h2 id="backupTitle">建议备份笔记</h2>
+        </div>
+        <button class="ghost-button" id="closeBackupButton" type="button">稍后提醒</button>
+      </div>
+      <p class="modal-copy" id="backupMessage">为了防止浏览器数据丢失，建议导出全部 JSON 备份。</p>
+      <div class="modal-actions">
+        <button class="ghost-button" id="backupLaterButton" type="button">稍后提醒</button>
+        <button class="primary-button" id="backupNowButton" type="button">立即导出全部 JSON</button>
+      </div>
+    </section>
+  </div>
+
+  <div class="modal-backdrop" id="importDialog" hidden>
+    <section class="changelog-modal" role="dialog" aria-modal="true" aria-labelledby="importTitle">
+      <div class="modal-header">
+        <div>
+          <p class="eyebrow">Import</p>
+          <h2 id="importTitle">导入备份前确认</h2>
+        </div>
+        <button class="ghost-button" id="closeImportButton" type="button">关闭</button>
+      </div>
+      <p class="modal-copy" id="importSummary">已读取备份文件。</p>
+      <div class="import-preview-list" id="importPreviewList"></div>
+      <div class="modal-actions">
+        <button class="ghost-button" id="previewImportButton" type="button">仅预览</button>
+        <button class="ghost-button" id="mergeImportButton" type="button">合并导入</button>
+        <button class="primary-button danger-button" id="overwriteImportButton" type="button">覆盖当前</button>
+      </div>
+    </section>
+  </div>
+
   <template id="historyItemTemplate">
     <li>
       <div class="history-item">
