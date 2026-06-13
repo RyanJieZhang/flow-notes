@@ -387,6 +387,10 @@ h1 {
   opacity: 0.72;
 }
 
+.history-item.locked {
+  border-style: dashed;
+}
+
 .history-item.pinned {
   border-color: var(--accent);
 }
@@ -544,6 +548,31 @@ h1 {
   border-color: var(--accent);
   background: var(--accent-soft);
   color: var(--accent-strong);
+}
+
+button:disabled,
+input:read-only,
+textarea:read-only {
+  cursor: not-allowed;
+}
+
+button:disabled {
+  opacity: 0.58;
+}
+
+.note-locked .editor-surface {
+  border-color: var(--accent);
+  background: var(--surface-soft);
+}
+
+.note-locked .note-input,
+.note-locked .title-input,
+.note-locked .tag-editor input {
+  color: var(--muted);
+}
+
+.note-locked .current-line-highlight {
+  display: none;
 }
 
 .workspace {

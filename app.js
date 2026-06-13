@@ -55,6 +55,7 @@ const noteCount = document.querySelector("#noteCount");
 const saveStatus = document.querySelector("#saveStatus");
 const wordCount = document.querySelector("#wordCount");
 const tagInput = document.querySelector("#tagInput");
+const lockButton = document.querySelector("#lockButton");
 const pinButton = document.querySelector("#pinButton");
 const archiveButton = document.querySelector("#archiveButton");
 const focusModeButton = document.querySelector("#focusModeButton");
@@ -75,6 +76,7 @@ const CHANGELOG_ENTRIES = [
     date: "2026/06/08",
     title: "代码编辑体验",
     items: [
+      "新增笔记锁定 / 只读模式，重要笔记锁定后不可编辑，但仍可预览、复制和导出。",
       "新增正式笔记自动保存，已保存笔记编辑后 2 秒会自动更新并显示保存状态。",
       "新增自动备份提醒，每保存 20 次或距离上次备份 7 天会提示导出全部 JSON。",
       "导入 JSON 备份前新增确认面板，可选择覆盖当前、合并导入或仅预览。",
@@ -251,6 +253,7 @@ titleInput.addEventListener("input", () => {
 tagInput.addEventListener("input", () => {
   handleEditorChanged();
 });
+lockButton.addEventListener("click", toggleLocked);
 pinButton.addEventListener("click", togglePinned);
 archiveButton.addEventListener("click", toggleArchived);
 focusModeButton.addEventListener("click", enterFocusMode);
@@ -306,6 +309,12 @@ function saveCurrentNote(options = {}) {
   const body = noteInput.value.trim();
   const title = titleInput.value.trim() || "未命名笔记";
   const tags = parseTags(tagInput.value);
+  const activeNote = notes.find((note) => note.id === activeNoteId);
+
+  if (activeNote?.locked) {
+    if (!isAutoSave) saveStatus.textContent = "笔记已锁定，解锁后才能修改";
+    return;
+  }
 
   if (!body && !titleInput.value.trim()) {
     if (!isAutoSave) saveStatus.textContent = "先写点内容再保存";
@@ -313,7 +322,6 @@ function saveCurrentNote(options = {}) {
   }
 
   const now = new Date();
-  const activeNote = notes.find((note) => note.id === activeNoteId);
 
   if (activeNote) {
     if (!isAutoSave) addVersionSnapshot(activeNote);
@@ -332,6 +340,7 @@ function saveCurrentNote(options = {}) {
       tags,
       pinned: false,
       archived: false,
+      locked: false,
       versions: [],
       createdAt: now.toISOString(),
       updatedAt: now.toISOString(),
@@ -363,6 +372,7 @@ function startFreshNote() {
   updatePreview();
   updateEditorChrome();
   updateNoteActions();
+  updateEditorLockState();
   renderHistory();
   titleInput.focus();
 }
@@ -414,6 +424,11 @@ function addVersionSnapshot(note) {
 }
 
 function handleEditorChanged() {
+  if (isActiveNoteLocked()) {
+    saveStatus.textContent = "笔记已锁定，解锁后才能编辑";
+    return;
+  }
+
   markDraft();
   saveDraft();
   scheduleAutoSave();
@@ -423,6 +438,11 @@ function scheduleAutoSave() {
   window.clearTimeout(autoSaveTimer);
 
   const activeNote = notes.find((note) => note.id === activeNoteId);
+  if (activeNote?.locked) {
+    saveStatus.textContent = "笔记已锁定";
+    return;
+  }
+
   if (!activeNote) {
     saveStatus.textContent = "正在编辑草稿，首次保存后会自动保存";
     return;
@@ -438,6 +458,10 @@ function scheduleAutoSave() {
     if (getEditorSignature() === lastAutoSavedSignature) return;
     saveCurrentNote({ source: "auto" });
   }, AUTOSAVE_DELAY);
+}
+
+function isActiveNoteLocked() {
+  return Boolean(notes.find((note) => note.id === activeNoteId)?.locked);
 }
 
 function getEditorSignature() {
@@ -459,6 +483,19 @@ function togglePinned() {
   render();
   syncEditorFromActiveNote();
   saveStatus.textContent = note.pinned ? "已置顶" : "已取消置顶";
+}
+
+function toggleLocked() {
+  const note = getActiveSavedNote();
+  if (!note) return;
+
+  window.clearTimeout(autoSaveTimer);
+  note.locked = !note.locked;
+  note.updatedAt = new Date().toISOString();
+  persistNotes();
+  render();
+  syncEditorFromActiveNote();
+  saveStatus.textContent = note.locked ? "已锁定，只读模式已开启" : "已解锁，可以继续编辑";
 }
 
 function toggleArchived() {
@@ -497,6 +534,7 @@ function syncEditorFromDraftOrActiveNote() {
     updatePreview();
     updateEditorChrome();
     updateNoteActions();
+    updateEditorLockState();
     lastAutoSavedSignature = getEditorSignature();
     return;
   }
@@ -516,18 +554,22 @@ function syncEditorFromActiveNote() {
     updatePreview();
     updateEditorChrome();
     updateNoteActions();
+    updateEditorLockState();
     return;
   }
 
   titleInput.value = activeNote.title;
   noteInput.value = activeNote.body;
   tagInput.value = (activeNote.tags || []).join(", ");
-  saveStatus.textContent = `正在编辑：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`;
+  saveStatus.textContent = activeNote.locked
+    ? `只读模式：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`
+    : `正在编辑：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`;
   lastAutoSavedSignature = getEditorSignature();
   updateWordCount();
   updatePreview();
   updateEditorChrome();
   updateNoteActions();
+  updateEditorLockState();
 }
 
 function exportCurrentNote() {
@@ -593,6 +635,11 @@ function handleGlobalShortcuts(event) {
 }
 
 function applyShortcutFormat(action) {
+  if (isActiveNoteLocked()) {
+    saveStatus.textContent = "笔记已锁定，解锁后才能编辑";
+    return;
+  }
+
   applyView(activeView === "preview" ? "edit" : activeView);
   noteInput.focus();
 
@@ -837,6 +884,12 @@ function handleVersionAction(event) {
     return;
   }
 
+  if (note.locked) {
+    saveStatus.textContent = "笔记已锁定，解锁后才能恢复旧版本";
+    closeVersions();
+    return;
+  }
+
   titleInput.value = version.title || "";
   noteInput.value = version.body || "";
   tagInput.value = (version.tags || []).join(", ");
@@ -957,12 +1010,13 @@ function renderHistory() {
     button.classList.toggle("active", note.id === activeNoteId);
     button.classList.toggle("pinned", Boolean(note.pinned));
     button.classList.toggle("archived", Boolean(note.archived));
+    button.classList.toggle("locked", Boolean(note.locked));
     restoreButton.addEventListener("click", () => restoreNote(note.id));
     deleteButton.addEventListener("click", () => deleteNote(note.id));
-    title.innerHTML = `${note.pinned ? "★ " : ""}${highlightSearchMatches(note.title, search.highlightTerms)}`;
+    title.innerHTML = `${note.pinned ? "★ " : ""}${note.locked ? "[锁] " : ""}${highlightSearchMatches(note.title, search.highlightTerms)}`;
     preview.innerHTML = highlightSearchMatches(getSearchPreview(note, search.highlightTerms), search.highlightTerms);
     tagline.innerHTML = note.tags?.length ? highlightSearchMatches(note.tags.map((tag) => `#${tag}`).join(" "), search.highlightTerms) : "无标签";
-    time.textContent = `${note.archived ? "归档 · " : ""}${formatDate(new Date(note.updatedAt || note.createdAt))}`;
+    time.textContent = `${note.locked ? "锁定 · " : ""}${note.archived ? "归档 · " : ""}${formatDate(new Date(note.updatedAt || note.createdAt))}`;
     historyList.append(item);
   });
 }
@@ -1163,6 +1217,11 @@ function findPreviewBlockForLine(lineNumber) {
 }
 
 function insertPythonCodeBlock() {
+  if (isActiveNoteLocked()) {
+    saveStatus.textContent = "笔记已锁定，解锁后才能插入代码块";
+    return;
+  }
+
   applyView(activeView === "preview" ? "edit" : activeView);
 
   const language = codeLanguageSelect.value || "python";
@@ -1213,6 +1272,11 @@ function getCodeTemplate(language) {
 function handleFormatAction(event) {
   const button = event.target.closest("[data-format-action]");
   if (!button) return;
+
+  if (isActiveNoteLocked()) {
+    saveStatus.textContent = "笔记已锁定，解锁后才能编辑";
+    return;
+  }
 
   const action = button.dataset.formatAction;
   if (action === "code") {
@@ -1292,6 +1356,11 @@ function handleEditorDragLeave(event) {
 }
 
 async function handleEditorDrop(event) {
+  if (isActiveNoteLocked()) {
+    saveStatus.textContent = "笔记已锁定，解锁后才能插入图片";
+    return;
+  }
+
   const files = [...(event.dataTransfer?.files || [])].filter((file) => file.type.startsWith("image/"));
   if (!files.length) return;
 
@@ -1388,6 +1457,8 @@ function formatFileSize(bytes) {
 }
 
 function handleEditorKeydown(event) {
+  if (isActiveNoteLocked()) return;
+
   if (event.key === "Tab") {
     event.preventDefault();
     if (event.shiftKey) {
@@ -1499,6 +1570,7 @@ function buildExportNote(title, body) {
     tags: activeNote?.tags || parseTags(tagInput.value),
     pinned: Boolean(activeNote?.pinned),
     archived: Boolean(activeNote?.archived),
+    locked: Boolean(activeNote?.locked),
     versions: activeNote?.versions || [],
     createdAt: activeNote?.createdAt || null,
     updatedAt: activeNote?.updatedAt || new Date().toISOString(),
@@ -1733,6 +1805,7 @@ function normalizeNote(note) {
     tags: Array.isArray(note?.tags) ? note.tags.map(String).map((tag) => tag.trim()).filter(Boolean) : [],
     pinned: Boolean(note?.pinned),
     archived: Boolean(note?.archived),
+    locked: Boolean(note?.locked),
     versions: normalizeVersions(note?.versions),
     createdAt: note?.createdAt || now,
     updatedAt: note?.updatedAt || note?.createdAt || now,
@@ -1757,10 +1830,27 @@ function parseTags(value) {
 
 function updateNoteActions() {
   const note = notes.find((item) => item.id === activeNoteId);
+  lockButton.classList.toggle("active", Boolean(note?.locked));
   pinButton.classList.toggle("active", Boolean(note?.pinned));
   archiveButton.classList.toggle("active", Boolean(note?.archived));
+  lockButton.disabled = !note;
+  lockButton.textContent = note?.locked ? "解锁" : "锁定";
   pinButton.textContent = note?.pinned ? "取消置顶" : "置顶";
   archiveButton.textContent = note?.archived ? "取消归档" : "归档";
+}
+
+function updateEditorLockState() {
+  const locked = isActiveNoteLocked();
+  appShell.classList.toggle("note-locked", locked);
+  titleInput.readOnly = locked;
+  noteInput.readOnly = locked;
+  tagInput.readOnly = locked;
+  saveButton.disabled = locked;
+  codeBlockButton.disabled = locked;
+  formatToolbar.querySelectorAll("button").forEach((button) => {
+    button.disabled = locked;
+  });
+  noteInput.placeholder = locked ? "这条笔记已锁定。解锁后才能编辑正文。" : "把想法写在这里。支持 Markdown，保存后可以继续编辑，也可以切到预览查看排版。";
 }
 
 function parseSearchQuery(value) {
