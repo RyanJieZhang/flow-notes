@@ -8,6 +8,7 @@ const SPLIT_RATIO_KEY = "flow-notes-split-ratio";
 const BACKUP_META_KEY = "flow-notes-backup-meta";
 const BACKUP_SAVE_INTERVAL = 20;
 const BACKUP_DAY_INTERVAL = 7;
+const AUTOSAVE_DELAY = 2000;
 const ONE_DAY_MS = 24 * 60 * 60 * 1000;
 
 const appShell = document.querySelector("#appShell");
@@ -74,6 +75,7 @@ const CHANGELOG_ENTRIES = [
     date: "2026/06/08",
     title: "代码编辑体验",
     items: [
+      "新增正式笔记自动保存，已保存笔记编辑后 2 秒会自动更新并显示保存状态。",
       "新增自动备份提醒，每保存 20 次或距离上次备份 7 天会提示导出全部 JSON。",
       "导入 JSON 备份前新增确认面板，可选择覆盖当前、合并导入或仅预览。",
       "新增快捷键、统计面板、全量 Markdown/HTML 导出、搜索语法、图片压缩提示和版本差异预览。",
@@ -147,6 +149,8 @@ let viewBeforeFocus = activeView;
 let pendingImportNotes = [];
 let pyodideReadyPromise = null;
 let previewSyncTimer = null;
+let autoSaveTimer = null;
+let lastAutoSavedSignature = "";
 
 applyTheme(loadTheme());
 applySidebarLayout();
@@ -227,8 +231,7 @@ noteInput.addEventListener("input", () => {
   updateWordCount();
   updatePreview();
   updateEditorChrome();
-  markDraft();
-  saveDraft();
+  handleEditorChanged();
   schedulePreviewSync();
 });
 noteInput.addEventListener("keydown", handleEditorKeydown);
@@ -243,12 +246,10 @@ noteInput.addEventListener("dragleave", handleEditorDragLeave);
 noteInput.addEventListener("drop", handleEditorDrop);
 titleInput.addEventListener("input", () => {
   updatePreview();
-  markDraft();
-  saveDraft();
+  handleEditorChanged();
 });
 tagInput.addEventListener("input", () => {
-  markDraft();
-  saveDraft();
+  handleEditorChanged();
 });
 pinButton.addEventListener("click", togglePinned);
 archiveButton.addEventListener("click", toggleArchived);
@@ -300,13 +301,14 @@ function clearDraft() {
   localStorage.removeItem(DRAFT_KEY);
 }
 
-function saveCurrentNote() {
+function saveCurrentNote(options = {}) {
+  const isAutoSave = options?.source === "auto";
   const body = noteInput.value.trim();
   const title = titleInput.value.trim() || "未命名笔记";
   const tags = parseTags(tagInput.value);
 
   if (!body && !titleInput.value.trim()) {
-    saveStatus.textContent = "先写点内容再保存";
+    if (!isAutoSave) saveStatus.textContent = "先写点内容再保存";
     return;
   }
 
@@ -314,14 +316,15 @@ function saveCurrentNote() {
   const activeNote = notes.find((note) => note.id === activeNoteId);
 
   if (activeNote) {
-    addVersionSnapshot(activeNote);
+    if (!isAutoSave) addVersionSnapshot(activeNote);
     activeNote.title = title;
     activeNote.body = body;
     activeNote.tags = tags;
     activeNote.updatedAt = now.toISOString();
     notes = [activeNote, ...notes.filter((note) => note.id !== activeNote.id)];
-    saveStatus.textContent = `已更新：${formatDate(now)}`;
+    saveStatus.textContent = isAutoSave ? `已自动保存：${formatDate(now)}` : `已更新：${formatDate(now)}`;
   } else {
+    if (isAutoSave) return;
     const note = {
       id: createNoteId(),
       title,
@@ -341,16 +344,20 @@ function saveCurrentNote() {
 
   persistNotes();
   clearDraft();
+  lastAutoSavedSignature = getEditorSignature();
+  window.clearTimeout(autoSaveTimer);
   render();
-  recordSaveForBackupReminder();
+  if (!isAutoSave) recordSaveForBackupReminder();
 }
 
 function startFreshNote() {
+  window.clearTimeout(autoSaveTimer);
   activeNoteId = null;
   titleInput.value = "";
   noteInput.value = "";
   tagInput.value = "";
   saveStatus.textContent = "新笔记";
+  lastAutoSavedSignature = getEditorSignature();
   clearDraft();
   updateWordCount();
   updatePreview();
@@ -361,6 +368,7 @@ function startFreshNote() {
 }
 
 function restoreNote(id) {
+  window.clearTimeout(autoSaveTimer);
   activeNoteId = id;
   syncEditorFromActiveNote();
   clearDraft();
@@ -376,6 +384,7 @@ function deleteNote(id) {
 
   notes = notes.filter((item) => item.id !== id);
   if (activeNoteId === id) {
+    window.clearTimeout(autoSaveTimer);
     activeNoteId = notes[0]?.id ?? null;
     syncEditorFromActiveNote();
   }
@@ -402,6 +411,42 @@ function addVersionSnapshot(note) {
   };
 
   note.versions = [snapshot, ...(note.versions || [])].slice(0, 20);
+}
+
+function handleEditorChanged() {
+  markDraft();
+  saveDraft();
+  scheduleAutoSave();
+}
+
+function scheduleAutoSave() {
+  window.clearTimeout(autoSaveTimer);
+
+  const activeNote = notes.find((note) => note.id === activeNoteId);
+  if (!activeNote) {
+    saveStatus.textContent = "正在编辑草稿，首次保存后会自动保存";
+    return;
+  }
+
+  const nextSignature = getEditorSignature();
+  if (nextSignature === lastAutoSavedSignature) return;
+
+  saveStatus.textContent = "正在编辑，稍后自动保存";
+  autoSaveTimer = window.setTimeout(() => {
+    const latestNote = notes.find((note) => note.id === activeNoteId);
+    if (!latestNote) return;
+    if (getEditorSignature() === lastAutoSavedSignature) return;
+    saveCurrentNote({ source: "auto" });
+  }, AUTOSAVE_DELAY);
+}
+
+function getEditorSignature() {
+  return JSON.stringify({
+    activeNoteId,
+    title: titleInput.value.trim() || "未命名笔记",
+    body: noteInput.value.trim(),
+    tags: parseTags(tagInput.value),
+  });
 }
 
 function togglePinned() {
@@ -452,6 +497,7 @@ function syncEditorFromDraftOrActiveNote() {
     updatePreview();
     updateEditorChrome();
     updateNoteActions();
+    lastAutoSavedSignature = getEditorSignature();
     return;
   }
 
@@ -465,6 +511,7 @@ function syncEditorFromActiveNote() {
     titleInput.value = "";
     noteInput.value = "";
     tagInput.value = "";
+    lastAutoSavedSignature = getEditorSignature();
     updateWordCount();
     updatePreview();
     updateEditorChrome();
@@ -476,6 +523,7 @@ function syncEditorFromActiveNote() {
   noteInput.value = activeNote.body;
   tagInput.value = (activeNote.tags || []).join(", ");
   saveStatus.textContent = `正在编辑：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`;
+  lastAutoSavedSignature = getEditorSignature();
   updateWordCount();
   updatePreview();
   updateEditorChrome();
@@ -564,6 +612,7 @@ function clearHistory() {
   const confirmed = window.confirm("确定清空所有历史记录吗？这个操作不能撤销。");
   if (!confirmed) return;
 
+  window.clearTimeout(autoSaveTimer);
   notes = [];
   activeNoteId = null;
   persistNotes();
@@ -793,7 +842,7 @@ function handleVersionAction(event) {
   tagInput.value = (version.tags || []).join(", ");
   updateEditorState();
   updateNoteActions();
-  saveStatus.textContent = "已恢复旧版本，点击保存后生效";
+  saveStatus.textContent = notes.some((item) => item.id === activeNoteId) ? "已恢复旧版本，稍后自动保存" : "已恢复旧版本，点击保存后生效";
   closeVersions();
   noteInput.focus();
 }
@@ -1134,8 +1183,7 @@ function insertPythonCodeBlock() {
   updateWordCount();
   updatePreview();
   updateEditorChrome();
-  markDraft();
-  saveDraft();
+  handleEditorChanged();
 }
 
 function getLanguageLabel(language) {
@@ -1406,8 +1454,7 @@ function updateEditorState() {
   updateWordCount();
   updatePreview();
   updateEditorChrome();
-  markDraft();
-  saveDraft();
+  handleEditorChanged();
   schedulePreviewSync();
 }
 
