@@ -76,6 +76,7 @@ const CHANGELOG_ENTRIES = [
     date: "2026/06/08",
     title: "代码编辑体验",
     items: [
+      "新增回收站，删除笔记会先移入回收站，可恢复或永久删除。",
       "新增笔记锁定 / 只读模式，重要笔记锁定后不可编辑，但仍可预览、复制和导出。",
       "新增正式笔记自动保存，已保存笔记编辑后 2 秒会自动更新并显示保存状态。",
       "新增自动备份提醒，每保存 20 次或距离上次备份 7 天会提示导出全部 JSON。",
@@ -311,8 +312,8 @@ function saveCurrentNote(options = {}) {
   const tags = parseTags(tagInput.value);
   const activeNote = notes.find((note) => note.id === activeNoteId);
 
-  if (activeNote?.locked) {
-    if (!isAutoSave) saveStatus.textContent = "笔记已锁定，解锁后才能修改";
+  if (activeNote?.locked || activeNote?.trashed) {
+    if (!isAutoSave) saveStatus.textContent = activeNote.trashed ? "笔记在回收站中，恢复后才能修改" : "笔记已锁定，解锁后才能修改";
     return;
   }
 
@@ -340,6 +341,8 @@ function saveCurrentNote(options = {}) {
       tags,
       pinned: false,
       archived: false,
+      trashed: false,
+      trashedAt: null,
       locked: false,
       versions: [],
       createdAt: now.toISOString(),
@@ -389,19 +392,54 @@ function deleteNote(id) {
   const note = notes.find((item) => item.id === id);
   if (!note) return;
 
-  const confirmed = window.confirm(`确定删除「${note.title}」这条历史吗？`);
+  if (note.trashed) {
+    const confirmed = window.confirm(`确定永久删除「${note.title}」吗？这个操作不能撤销。`);
+    if (!confirmed) return;
+    notes = notes.filter((item) => item.id !== id);
+    if (activeNoteId === id) {
+      window.clearTimeout(autoSaveTimer);
+      activeNoteId = findNextVisibleNoteId();
+      syncEditorFromActiveNote();
+    }
+    persistNotes();
+    render();
+    saveStatus.textContent = "笔记已永久删除";
+    return;
+  }
+
+  const confirmed = window.confirm(`确定把「${note.title}」移入回收站吗？`);
   if (!confirmed) return;
 
-  notes = notes.filter((item) => item.id !== id);
+  note.trashed = true;
+  note.trashedAt = new Date().toISOString();
+  note.updatedAt = note.trashedAt;
   if (activeNoteId === id) {
     window.clearTimeout(autoSaveTimer);
-    activeNoteId = notes[0]?.id ?? null;
+    activeNoteId = findNextVisibleNoteId();
     syncEditorFromActiveNote();
   }
 
   persistNotes();
   render();
-  saveStatus.textContent = "历史记录已删除";
+  saveStatus.textContent = "笔记已移入回收站";
+}
+
+function restoreTrashedNote(id) {
+  const note = notes.find((item) => item.id === id);
+  if (!note) return;
+
+  note.trashed = false;
+  note.trashedAt = null;
+  note.updatedAt = new Date().toISOString();
+  activeNoteId = note.id;
+  persistNotes();
+  syncEditorFromActiveNote();
+  render();
+  saveStatus.textContent = "笔记已从回收站恢复";
+}
+
+function findNextVisibleNoteId() {
+  return notes.find((note) => !note.trashed)?.id ?? null;
 }
 
 function addVersionSnapshot(note) {
@@ -425,7 +463,8 @@ function addVersionSnapshot(note) {
 
 function handleEditorChanged() {
   if (isActiveNoteLocked()) {
-    saveStatus.textContent = "笔记已锁定，解锁后才能编辑";
+    const activeNote = notes.find((note) => note.id === activeNoteId);
+    saveStatus.textContent = activeNote?.trashed ? "笔记在回收站中，恢复后才能编辑" : "笔记已锁定，解锁后才能编辑";
     return;
   }
 
@@ -438,8 +477,8 @@ function scheduleAutoSave() {
   window.clearTimeout(autoSaveTimer);
 
   const activeNote = notes.find((note) => note.id === activeNoteId);
-  if (activeNote?.locked) {
-    saveStatus.textContent = "笔记已锁定";
+  if (activeNote?.locked || activeNote?.trashed) {
+    saveStatus.textContent = activeNote.trashed ? "笔记在回收站中" : "笔记已锁定";
     return;
   }
 
@@ -461,7 +500,8 @@ function scheduleAutoSave() {
 }
 
 function isActiveNoteLocked() {
-  return Boolean(notes.find((note) => note.id === activeNoteId)?.locked);
+  const note = notes.find((item) => item.id === activeNoteId);
+  return Boolean(note?.locked || note?.trashed);
 }
 
 function getEditorSignature() {
@@ -561,9 +601,11 @@ function syncEditorFromActiveNote() {
   titleInput.value = activeNote.title;
   noteInput.value = activeNote.body;
   tagInput.value = (activeNote.tags || []).join(", ");
-  saveStatus.textContent = activeNote.locked
-    ? `只读模式：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`
-    : `正在编辑：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`;
+  saveStatus.textContent = activeNote.trashed
+    ? `回收站只读：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`
+    : activeNote.locked
+      ? `只读模式：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`
+      : `正在编辑：${formatDate(new Date(activeNote.updatedAt || activeNote.createdAt))}`;
   lastAutoSavedSignature = getEditorSignature();
   updateWordCount();
   updatePreview();
@@ -656,15 +698,23 @@ function applyShortcutFormat(action) {
 
 function clearHistory() {
   if (!notes.length) return;
-  const confirmed = window.confirm("确定清空所有历史记录吗？这个操作不能撤销。");
+  const clearingTrash = statusFilter.value === "trashed";
+  const targetNotes = clearingTrash ? notes.filter((note) => note.trashed) : notes.filter((note) => !note.trashed);
+  if (!targetNotes.length) return;
+
+  const confirmed = window.confirm(clearingTrash
+    ? "确定永久清空回收站吗？这个操作不能撤销。"
+    : "确定清空所有非回收站笔记吗？这个操作不能撤销。");
   if (!confirmed) return;
 
   window.clearTimeout(autoSaveTimer);
-  notes = [];
-  activeNoteId = null;
+  const targetIds = new Set(targetNotes.map((note) => note.id));
+  notes = notes.filter((note) => !targetIds.has(note.id));
+  activeNoteId = findNextVisibleNoteId();
   persistNotes();
-  startFreshNote();
-  saveStatus.textContent = "历史记录已清空";
+  syncEditorFromActiveNote();
+  render();
+  saveStatus.textContent = clearingTrash ? "回收站已清空" : "非回收站笔记已清空";
 }
 
 function render() {
@@ -675,19 +725,16 @@ function render() {
 }
 
 function renderStats() {
-  const now = Date.now();
-  const recentCount = notes.filter((note) => {
-    const updatedAt = new Date(note.updatedAt || note.createdAt).getTime();
-    return Number.isFinite(updatedAt) && now - updatedAt <= 7 * ONE_DAY_MS;
-  }).length;
-  const archivedCount = notes.filter((note) => note.archived).length;
-  const tagCount = new Set(notes.flatMap((note) => normalizeNote(note).tags)).size;
+  const activeNotes = notes.filter((note) => !note.trashed);
+  const archivedCount = activeNotes.filter((note) => note.archived).length;
+  const tagCount = new Set(activeNotes.flatMap((note) => normalizeNote(note).tags)).size;
+  const trashedCount = notes.filter((note) => note.trashed).length;
 
   statsPanel.innerHTML = `
-    <div><strong>${notes.length}</strong><span>总笔记</span></div>
+    <div><strong>${activeNotes.length}</strong><span>总笔记</span></div>
     <div><strong>${archivedCount}</strong><span>归档</span></div>
     <div><strong>${tagCount}</strong><span>标签</span></div>
-    <div><strong>${recentCount}</strong><span>7天更新</span></div>
+    <div><strong>${trashedCount}</strong><span>回收站</span></div>
   `;
 }
 
@@ -976,18 +1023,20 @@ function renderHistory() {
     const matchesTag = selectedTag === "all" || normalized.tags.includes(selectedTag);
     const matchesStatus =
       status === "all" ||
-      (status === "active" && !normalized.archived) ||
-      (status === "pinned" && normalized.pinned) ||
-      (status === "archived" && normalized.archived);
+      (status === "active" && !normalized.archived && !normalized.trashed) ||
+      (status === "pinned" && normalized.pinned && !normalized.trashed) ||
+      (status === "archived" && normalized.archived && !normalized.trashed) ||
+      (status === "trashed" && normalized.trashed);
 
-    return matchesQuery && matchesTag && matchesStatus;
+    return matchesQuery && matchesTag && matchesStatus && (status === "trashed" || !normalized.trashed);
   }).sort((first, second) => {
     if (first.pinned !== second.pinned) return first.pinned ? -1 : 1;
     return new Date(second.updatedAt || second.createdAt) - new Date(first.updatedAt || first.createdAt);
   });
 
   historyList.innerHTML = "";
-  noteCount.textContent = `${visibleNotes.length}/${notes.length} 条记录`;
+  const totalForStatus = status === "trashed" ? notes.filter((note) => note.trashed).length : notes.filter((note) => !note.trashed).length;
+  noteCount.textContent = `${visibleNotes.length}/${totalForStatus} 条记录`;
 
   if (!visibleNotes.length) {
     const empty = document.createElement("li");
@@ -1001,6 +1050,7 @@ function renderHistory() {
     const item = template.content.cloneNode(true);
     const button = item.querySelector(".history-item");
     const restoreButton = item.querySelector(".history-restore");
+    const restoreTrashButton = item.querySelector(".restore-note");
     const deleteButton = item.querySelector(".delete-note");
     const title = item.querySelector("strong");
     const preview = item.querySelector(".preview");
@@ -1011,19 +1061,24 @@ function renderHistory() {
     button.classList.toggle("pinned", Boolean(note.pinned));
     button.classList.toggle("archived", Boolean(note.archived));
     button.classList.toggle("locked", Boolean(note.locked));
+    button.classList.toggle("trashed", Boolean(note.trashed));
     restoreButton.addEventListener("click", () => restoreNote(note.id));
+    restoreTrashButton.hidden = !note.trashed;
+    restoreTrashButton.addEventListener("click", () => restoreTrashedNote(note.id));
     deleteButton.addEventListener("click", () => deleteNote(note.id));
+    deleteButton.title = note.trashed ? "永久删除这条笔记" : "移入回收站";
+    deleteButton.setAttribute("aria-label", deleteButton.title);
     title.innerHTML = `${note.pinned ? "★ " : ""}${note.locked ? "[锁] " : ""}${highlightSearchMatches(note.title, search.highlightTerms)}`;
     preview.innerHTML = highlightSearchMatches(getSearchPreview(note, search.highlightTerms), search.highlightTerms);
     tagline.innerHTML = note.tags?.length ? highlightSearchMatches(note.tags.map((tag) => `#${tag}`).join(" "), search.highlightTerms) : "无标签";
-    time.textContent = `${note.locked ? "锁定 · " : ""}${note.archived ? "归档 · " : ""}${formatDate(new Date(note.updatedAt || note.createdAt))}`;
+    time.textContent = `${note.trashed ? "回收站 · " : ""}${note.locked ? "锁定 · " : ""}${note.archived ? "归档 · " : ""}${formatDate(new Date(note.updatedAt || note.createdAt))}`;
     historyList.append(item);
   });
 }
 
 function renderTagFilter() {
   const currentValue = tagFilter.value;
-  const tags = [...new Set(notes.flatMap((note) => normalizeNote(note).tags))]
+  const tags = [...new Set(notes.filter((note) => !note.trashed).flatMap((note) => normalizeNote(note).tags))]
     .sort((first, second) => first.localeCompare(second, "zh-CN"));
 
   tagFilter.innerHTML = '<option value="all">全部标签</option>';
@@ -1571,6 +1626,8 @@ function buildExportNote(title, body) {
     pinned: Boolean(activeNote?.pinned),
     archived: Boolean(activeNote?.archived),
     locked: Boolean(activeNote?.locked),
+    trashed: Boolean(activeNote?.trashed),
+    trashedAt: activeNote?.trashedAt || null,
     versions: activeNote?.versions || [],
     createdAt: activeNote?.createdAt || null,
     updatedAt: activeNote?.updatedAt || new Date().toISOString(),
@@ -1806,6 +1863,8 @@ function normalizeNote(note) {
     pinned: Boolean(note?.pinned),
     archived: Boolean(note?.archived),
     locked: Boolean(note?.locked),
+    trashed: Boolean(note?.trashed),
+    trashedAt: note?.trashedAt || null,
     versions: normalizeVersions(note?.versions),
     createdAt: note?.createdAt || now,
     updatedAt: note?.updatedAt || note?.createdAt || now,
@@ -1830,17 +1889,21 @@ function parseTags(value) {
 
 function updateNoteActions() {
   const note = notes.find((item) => item.id === activeNoteId);
+  const isTrashed = Boolean(note?.trashed);
   lockButton.classList.toggle("active", Boolean(note?.locked));
   pinButton.classList.toggle("active", Boolean(note?.pinned));
   archiveButton.classList.toggle("active", Boolean(note?.archived));
-  lockButton.disabled = !note;
+  lockButton.disabled = !note || isTrashed;
+  pinButton.disabled = !note || isTrashed;
+  archiveButton.disabled = !note || isTrashed;
   lockButton.textContent = note?.locked ? "解锁" : "锁定";
   pinButton.textContent = note?.pinned ? "取消置顶" : "置顶";
   archiveButton.textContent = note?.archived ? "取消归档" : "归档";
 }
 
 function updateEditorLockState() {
-  const locked = isActiveNoteLocked();
+  const activeNote = notes.find((note) => note.id === activeNoteId);
+  const locked = Boolean(activeNote?.locked || activeNote?.trashed);
   appShell.classList.toggle("note-locked", locked);
   titleInput.readOnly = locked;
   noteInput.readOnly = locked;
@@ -1850,7 +1913,11 @@ function updateEditorLockState() {
   formatToolbar.querySelectorAll("button").forEach((button) => {
     button.disabled = locked;
   });
-  noteInput.placeholder = locked ? "这条笔记已锁定。解锁后才能编辑正文。" : "把想法写在这里。支持 Markdown，保存后可以继续编辑，也可以切到预览查看排版。";
+  noteInput.placeholder = activeNote?.trashed
+    ? "这条笔记在回收站中。恢复后才能编辑正文。"
+    : locked
+      ? "这条笔记已锁定。解锁后才能编辑正文。"
+      : "把想法写在这里。支持 Markdown，保存后可以继续编辑，也可以切到预览查看排版。";
 }
 
 function parseSearchQuery(value) {
@@ -1981,7 +2048,7 @@ function buildExportFile(note, format) {
   }
 
   if (format === "all-markdown") {
-    if (!notes.length) return null;
+    if (!notes.some((note) => !note.trashed)) return null;
 
     return {
       content: buildAllMarkdownDocument(),
@@ -1993,7 +2060,7 @@ function buildExportFile(note, format) {
   }
 
   if (format === "all-html") {
-    if (!notes.length) return null;
+    if (!notes.some((note) => !note.trashed)) return null;
 
     return {
       content: buildAllHtmlDocument(),
@@ -2040,14 +2107,14 @@ function buildExportFile(note, format) {
 }
 
 function buildAllMarkdownDocument() {
-  return sortNotesByUpdatedAt(notes.map(normalizeNote)).map((note) => {
+  return sortNotesByUpdatedAt(notes.map(normalizeNote).filter((note) => !note.trashed)).map((note) => {
     const tags = note.tags.length ? `\n\n标签：${note.tags.map((tag) => `#${tag}`).join(" ")}` : "";
     return `# ${note.title}\n\n更新时间：${formatOptionalDate(note.updatedAt || note.createdAt)}${tags}\n\n${note.body}`;
   }).join("\n\n---\n\n");
 }
 
 function buildAllHtmlDocument() {
-  const content = sortNotesByUpdatedAt(notes.map(normalizeNote)).map((note) => {
+  const content = sortNotesByUpdatedAt(notes.map(normalizeNote).filter((note) => !note.trashed)).map((note) => {
     const tags = note.tags.length ? `<p class="note-tags">${note.tags.map((tag) => `#${escapeHtml(tag)}`).join(" ")}</p>` : "";
     return `<article class="export-note">
       <h1>${escapeHtml(note.title)}</h1>

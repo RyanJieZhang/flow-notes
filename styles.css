@@ -366,7 +366,7 @@ h1 {
 
 .history-item {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 34px;
+  grid-template-columns: minmax(0, 1fr) 34px 34px;
   gap: 10px;
   width: 100%;
   min-height: 94px;
@@ -385,6 +385,11 @@ h1 {
 
 .history-item.archived {
   opacity: 0.72;
+}
+
+.history-item.trashed {
+  opacity: 0.78;
+  border-style: dashed;
 }
 
 .history-item.locked {
@@ -406,7 +411,8 @@ h1 {
   text-align: left;
 }
 
-.delete-note {
+.delete-note,
+.restore-note {
   width: 34px;
   height: 34px;
   align-self: start;
@@ -422,6 +428,12 @@ h1 {
   border-color: rgba(178, 90, 57, 0.28);
   background: rgba(178, 90, 57, 0.14);
   color: var(--warning);
+}
+
+.restore-note:hover {
+  border-color: rgba(22, 100, 90, 0.28);
+  background: rgba(22, 100, 90, 0.14);
+  color: var(--accent-strong);
 }
 
 .history-item strong {
